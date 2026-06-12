@@ -2,7 +2,7 @@ use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use tracing::{info, error, warn};
-use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient};
+use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof,
     CommitmentLevel,
@@ -14,9 +14,12 @@ use yellowstone_grpc_proto::prelude::{
 pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
     info!("Connecting to Yellowstone at {}", endpoint);
 
+    let tls_config = tonic::transport::ClientTlsConfig::new()
+        .with_webpki_roots();
+
     let mut client = GeyserGrpcClient::build_from_shared(endpoint)?
         .x_token(Some(token))?
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())?
+        .tls_config(tls_config)?
         .connect()
         .await?;
 
@@ -24,24 +27,25 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
 
     let mut slots_filter = HashMap::new();
     slots_filter.insert(
-        "slots".to_string(),
+        "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
             interslot_updates: Some(false),
         },
     );
 
+    // IMPORTANT: do NOT set `ping` here - it causes server to ignore other fields
     let request = SubscribeRequest {
         slots: slots_filter,
         commitment: Some(CommitmentLevel::Processed as i32),
-        ping: Some(SubscribeRequestPing { id: 1 }),
         ..Default::default()
     };
 
+    info!("Sending subscribe request");
+
     let (mut sink, mut stream) = client.subscribe_with_request(Some(request)).await?;
 
-    info!("Stream opened — watching live Solana slots...");
-    info!("─────────────────────────────────────────────");
+    info!("Stream opened — waiting for messages...");
 
     while let Some(message) = stream.next().await {
         match message {
@@ -55,6 +59,7 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
                         );
                     }
                     Some(UpdateOneof::Ping(_)) => {
+                        // Server sent a keepalive ping - reply with ping-only request
                         let ping_request = SubscribeRequest {
                             ping: Some(SubscribeRequestPing { id: 1 }),
                             ..Default::default()
@@ -63,7 +68,9 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
                             warn!("Failed to send ping reply: {}", e);
                         }
                     }
-                    _ => {}
+                    other => {
+                        info!("Other update: {:?}", other);
+                    }
                 }
             }
             Err(e) => {
@@ -72,6 +79,8 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
             }
         }
     }
+
+    info!("Stream ended");
 
     Ok(())
 }
