@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const { Keypair } = require("@solana/web3.js");
 const fs = require("fs");
 

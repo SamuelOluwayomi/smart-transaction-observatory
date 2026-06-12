@@ -1,61 +1,148 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0); /* deep neutral */
-  --border-strong: oklch(0.839 0.0187 78.23);
-  --border-low: oklch(0.927 0.0122 96.43);
-  --accent: oklch(0 0 0);
-  --muted: #3a3a3a; /* darker for better light-mode contrast */
-  --cream: oklch(0.9553 0.0029 84.56);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --radius: 0.625rem;
+  --background: #e7e7e2;
+  --foreground: #111111;
+  --paper: #f4f4ef;
+  --card: #fbfbf8;
+  --muted: #343434;
+  --border-strong: #111111;
+  --border-low: #cfcac0;
+  --accent: #111111;
+  --radius: 0;
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --border-strong: oklch(1 0 0 / 0.12);
-    --border-low: oklch(1 0 0 / 0.08);
-    --accent: oklch(0.922 0 0);
-    --muted: oklch(0.75 0.01 260); /* brighten muted text in dark mode */
-    --cream: oklch(0.22 0.009 70.82);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-bg1: var(--background);
   --color-foreground: var(--foreground);
-  --color-cream: var(--cream);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
   --color-border: var(--border-strong);
   --color-border-strong: var(--border-strong);
   --color-border-low: var(--border-low);
   --color-primary: var(--accent);
-  --color-muted: var(--muted);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-brutal-xs: 3px 3px 0 #111111;
+  --shadow-brutal-sm: 5px 5px 0 #111111;
+  --shadow-brutal: 8px 8px 0 #111111;
 }
 
 @layer base {
   * {
     @apply border-border outline-transparent;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-bg1 text-foreground antialiased;
+    @apply bg-background text-foreground antialiased;
+    color-scheme: light;
     font-family: var(--font-sans);
-    color-scheme: light dark;
+    letter-spacing: 0;
+  }
+
+  a,
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer utilities {
+  .noise {
+    background-image:
+      radial-gradient(#111111 0.7px, transparent 0.7px),
+      repeating-linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.3) 0,
+        rgb(255 255 255 / 0.3) 1px,
+        transparent 1px,
+        transparent 7px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        rgb(17 17 17 / 0.055) 0,
+        rgb(17 17 17 / 0.055) 1px,
+        transparent 1px,
+        transparent 28px
+      );
+    background-position:
+      0 0,
+      0 0,
+      0 0;
+    background-size:
+      14px 14px,
+      100% 100%,
+      100% 100%;
+    opacity: 0.38;
+  }
+
+  .scanline {
+    background: linear-gradient(
+      180deg,
+      rgb(255 255 255 / 0.72),
+      rgb(255 255 255 / 0)
+    );
+  }
+
+  .glass {
+    background:
+      linear-gradient(135deg, rgb(255 255 255 / 0.86), rgb(255 255 255 / 0.42)),
+      repeating-linear-gradient(
+        100deg,
+        rgb(255 255 255 / 0.36) 0,
+        rgb(255 255 255 / 0.36) 1px,
+        rgb(17 17 17 / 0.045) 1px,
+        rgb(17 17 17 / 0.045) 3px,
+        transparent 3px,
+        transparent 12px
+      ),
+      radial-gradient(circle at 12% 0%, rgb(255 255 255 / 0.94), transparent 38%);
+    backdrop-filter: blur(16px);
+  }
+
+  .metal {
+    background:
+      linear-gradient(115deg, rgb(255 255 255 / 0.88), rgb(255 255 255 / 0.22) 34%, rgb(17 17 17 / 0.08) 35%, rgb(255 255 255 / 0.58) 62%, rgb(17 17 17 / 0.12)),
+      repeating-linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.38) 0,
+        rgb(255 255 255 / 0.38) 1px,
+        rgb(17 17 17 / 0.055) 1px,
+        rgb(17 17 17 / 0.055) 2px,
+        transparent 2px,
+        transparent 9px
+      ),
+      #d9d9d3;
+    box-shadow:
+      inset 1px 1px 0 rgb(255 255 255 / 0.9),
+      inset -1px -1px 0 rgb(17 17 17 / 0.22),
+      8px 8px 0 #111111;
+  }
+
+  .dark-metal {
+    background:
+      linear-gradient(120deg, #080808, #303030 24%, #111111 42%, #4a4a4a 49%, #0d0d0d 68%, #252525),
+      repeating-linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.11) 0,
+        rgb(255 255 255 / 0.11) 1px,
+        transparent 1px,
+        transparent 10px
+      );
+    box-shadow:
+      inset 1px 1px 0 rgb(255 255 255 / 0.22),
+      inset -1px -1px 0 rgb(0 0 0 / 0.8);
   }
 }

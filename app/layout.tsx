@@ -15,8 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Solana dApp Starter",
-  description: "A minimal Next.js starter powered by @solana/react-hooks",
+  title: "Smart Transaction Observatory",
+  description:
+    "A Solana smart transaction stack for Jito bundle submission, lifecycle tracking, and AI-assisted operations.",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",

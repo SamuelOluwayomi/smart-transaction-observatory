@@ -30,6 +30,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@next/swc-linux-x64-gnu": "^16.2.9",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
