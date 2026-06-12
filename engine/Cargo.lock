@@ -921,11 +921,14 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "bincode",
  "bs58",
  "chrono",
  "dotenv",
  "futures",
  "futures-util",
+ "rand 0.8.6",
  "reqwest",
  "serde",
  "serde_json",

@@ -45,7 +45,7 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
 
     let (mut sink, mut stream) = client.subscribe_with_request(Some(request)).await?;
 
-    info!("Stream opened — waiting for messages...");
+    info!("Stream opened -- waiting for messages...");
 
     while let Some(message) = stream.next().await {
         match message {
@@ -53,7 +53,7 @@ pub async fn stream_slots(endpoint: String, token: String) -> Result<()> {
                 match msg.update_oneof {
                     Some(UpdateOneof::Slot(slot_update)) => {
                         info!(
-                            "🟢 Slot: {} | Status: {:?}",
+                            "Slot: {} | Status: {:?}",
                             slot_update.slot,
                             slot_update.status
                         );
