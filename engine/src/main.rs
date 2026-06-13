@@ -133,6 +133,8 @@ async fn main() -> Result<()> {
                     lifecycle::track_bundle(
                         &config.jito_block_engine_url,
                         &config.solana_rpc_url,
+                        Some(&config.yellowstone_endpoint),
+                        Some(&config.yellowstone_token),
                         &bid,
                         &mut run,
                         15,    // max 15 polls
@@ -191,6 +193,8 @@ async fn main() -> Result<()> {
                                 lifecycle::track_bundle(
                                     &config.jito_block_engine_url,
                                     &config.solana_rpc_url,
+                                    Some(&config.yellowstone_endpoint),
+                                    Some(&config.yellowstone_token),
                                     &bid,
                                     &mut retry_run,
                                     15,

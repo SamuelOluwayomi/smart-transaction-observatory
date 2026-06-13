@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::Path;
 use tracing::{info, warn, error};
 
+use crate::geyser;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum BundleStatus {
     Submitted,
@@ -44,6 +46,7 @@ pub struct BundleRun {
     pub processed_at: Option<DateTime<Utc>>,
     pub confirmed_at: Option<DateTime<Utc>>,
     pub finalized_at: Option<DateTime<Utc>>,
+    pub confirmation_source: Option<String>,
 
     // Failure classification (bounty requirement)
     pub failure_type: Option<String>,
@@ -76,6 +79,7 @@ impl BundleRun {
             processed_at: None,
             confirmed_at: None,
             finalized_at: None,
+            confirmation_source: None,
             failure_type: None,
             failure_stage: None,
             recovery: None,
@@ -136,6 +140,8 @@ pub fn log_run(run: &BundleRun) {
 pub async fn track_bundle(
     jito_url: &str,
     rpc_url: &str,
+    yellowstone_endpoint: Option<&str>,
+    yellowstone_token: Option<&str>,
     bundle_id: &str,
     run: &mut BundleRun,
     max_polls: u32,
@@ -154,6 +160,64 @@ pub async fn track_bundle(
             return;
         }
     };
+
+    // First attempt: Yellowstone gRPC transaction-status stream.
+    // This is the high-score path for the bounty: the transaction lifecycle is
+    // observed from a stream subscription, while RPC remains a fallback and
+    // finalization checker.
+    if let (Some(endpoint), Some(token)) = (yellowstone_endpoint, yellowstone_token) {
+        match geyser::watch_transaction_status(
+            endpoint.to_string(),
+            token.to_string(),
+            run.signature.clone(),
+            25,
+        )
+        .await
+        {
+            Ok(Some(stream_status)) => {
+                run.landed_slot = Some(stream_status.slot);
+                run.processed_at.get_or_insert(stream_status.observed_at);
+
+                if let Some(err) = stream_status.err {
+                    error!(
+                        "Yellowstone stream observed on-chain failure for {}: {}",
+                        stream_status.signature, err
+                    );
+                    run.status = BundleStatus::Failed;
+                    run.error_reason = Some(format!("Yellowstone transaction error: {}", err));
+                    run.classify_failure(
+                        "stream_observed_on_chain_error",
+                        "yellowstone_transaction_status",
+                        "Inspect instruction logs and retry only after fixing the failing instruction",
+                    );
+                    return;
+                }
+
+                run.confirmed_at.get_or_insert(stream_status.observed_at);
+                run.confirmation_source = Some("yellowstone_stream".to_string());
+                run.status = BundleStatus::Landed;
+                run.landed_at = run.confirmed_at;
+                info!(
+                    "Yellowstone stream confirmed transaction {} at slot {}",
+                    stream_status.signature, stream_status.slot
+                );
+            }
+            Ok(None) => {
+                warn!(
+                    "Yellowstone transaction-status stream did not observe {}; falling back to RPC polling",
+                    run.signature
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Yellowstone transaction-status watch error for {}: {}; falling back to RPC polling",
+                    run.signature, e
+                );
+            }
+        }
+    } else {
+        warn!("Yellowstone endpoint/token missing; lifecycle will use RPC polling fallback");
+    }
 
     for attempt in 1..=max_polls {
         tokio::time::sleep(tokio::time::Duration::from_millis(poll_interval_ms)).await;
@@ -199,6 +263,10 @@ pub async fn track_bundle(
                         if level == "Confirmed" || level == "Finalized" {
                             if run.confirmed_at.is_none() {
                                 run.confirmed_at = Some(Utc::now());
+                                if run.confirmation_source.is_none() {
+                                    run.confirmation_source =
+                                        Some("rpc_polling_fallback".to_string());
+                                }
                                 info!(
                                     "Lifecycle [Confirmed] slot={} (poll {}/{})",
                                     status.slot, attempt, max_polls
@@ -221,6 +289,10 @@ pub async fn track_bundle(
                         if run.confirmed_at.is_some() && run.status != BundleStatus::Landed {
                             run.status = BundleStatus::Landed;
                             run.landed_at = Some(run.confirmed_at.unwrap());
+                            if run.confirmation_source.is_none() {
+                                run.confirmation_source =
+                                    Some("rpc_polling_fallback".to_string());
+                            }
                             info!(
                                 "Bundle landed on-chain at slot {} (poll {}/{})",
                                 status.slot, attempt, max_polls

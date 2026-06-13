@@ -1,7 +1,6 @@
 #[allow(deprecated)]
 use anyhow::{Context, Result};
 use base64::Engine as _;
-use chrono::Utc;
 use rand::seq::SliceRandom;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
@@ -125,7 +124,7 @@ pub async fn build_and_submit_bundle(
                 }
                 let mut fail_run = BundleRun::new(
                     String::new(),
-                    sim_tx.signatures[0].to_string(),
+                    bs58::encode(sim_tx.signatures[0].as_ref()).into_string(),
                     tip_lamports,
                     tip_account_str.to_string(),
                     BundleStatus::Failed,
@@ -154,7 +153,7 @@ pub async fn build_and_submit_bundle(
     let message = Message::new(&[memo_ix, tip_ix], Some(&keypair.pubkey()));
     let tx = Transaction::new(&[keypair], message, recent_blockhash);
 
-    let signature = tx.signatures[0].to_string();
+    let signature = bs58::encode(tx.signatures[0].as_ref()).into_string();
     info!("Signature: {}", signature);
 
     let tx_bytes = bincode::serialize(&tx).context("serialize transaction")?;
