@@ -11,7 +11,12 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 
-export type BundleStatus = "Submitted" | "Pending" | "Landed" | "Failed" | "Invalid";
+export type BundleStatus =
+  | "Submitted"
+  | "Pending"
+  | "Landed"
+  | "Failed"
+  | "Invalid";
 
 export type BundleRun = {
   bundle_id: string;
@@ -34,6 +39,7 @@ export type BundleRun = {
   processed_at?: string | null;
   confirmed_at?: string | null;
   finalized_at?: string | null;
+  confirmation_source?: string | null;
 };
 
 export type RunProfile =
@@ -108,11 +114,9 @@ export type SubmitOptions = {
 };
 
 const MEMO_PROGRAM_ID = new PublicKey(
-  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 );
-const FAILURE_SINK_PUBKEY = new PublicKey(
-  "11111111111111111111111111111112",
-);
+const FAILURE_SINK_PUBKEY = new PublicKey("11111111111111111111111111111112");
 
 const FALLBACK_TIP_ACCOUNTS = [
   "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
@@ -147,7 +151,7 @@ function parseEnvFile(filePath: string): Record<string, string> {
           .trim()
           .replace(/^['"]|['"]$/g, "");
         return [key, value];
-      }),
+      })
   );
 }
 
@@ -198,7 +202,11 @@ function classifyFailure(input: {
   error?: string | null;
   stage?: string;
 }) {
-  if (input.status === "Landed" || input.status === "Submitted" || input.status === "Pending") {
+  if (
+    input.status === "Landed" ||
+    input.status === "Submitted" ||
+    input.status === "Pending"
+  ) {
     return {
       failure_type: null,
       failure_stage: null,
@@ -209,23 +217,43 @@ function classifyFailure(input: {
   const error = input.error?.toLowerCase() ?? "";
   const profile = input.profile;
 
-  if (profile === "zero-tip-failure" || error.includes("tip") && error.includes("0")) {
+  if (
+    profile === "zero-tip-failure" ||
+    (error.includes("tip") && error.includes("0"))
+  ) {
     return {
-      failure_type: profile === "zero-tip-failure" ? "Injected Runtime Failure" : "Zero Tip",
+      failure_type:
+        profile === "zero-tip-failure"
+          ? "Injected Runtime Failure"
+          : "Zero Tip",
       failure_stage: input.stage ?? "Solana Runtime",
-      recovery: "Remove the injected failing instruction and retry with the live Jito floor.",
+      recovery:
+        "Remove the injected failing instruction and retry with the live Jito floor.",
     };
   }
 
-  if (profile === "low-tip-failure" || profile === "ai-retry-test" || error.includes("low") || error.includes("minimum")) {
+  if (
+    profile === "low-tip-failure" ||
+    profile === "ai-retry-test" ||
+    error.includes("low") ||
+    error.includes("minimum")
+  ) {
     return {
-      failure_type: profile === "low-tip-failure" || profile === "ai-retry-test" ? "Injected Runtime Failure" : "Low Tip",
+      failure_type:
+        profile === "low-tip-failure" || profile === "ai-retry-test"
+          ? "Injected Runtime Failure"
+          : "Low Tip",
       failure_stage: input.stage ?? "Solana Runtime",
-      recovery: "Retry without the fault injection using the AI-recommended tip.",
+      recovery:
+        "Retry without the fault injection using the AI-recommended tip.",
     };
   }
 
-  if (error.includes("rate") || error.includes("-32097") || error.includes("429")) {
+  if (
+    error.includes("rate") ||
+    error.includes("-32097") ||
+    error.includes("429")
+  ) {
     return {
       failure_type: "Rate Limited",
       failure_stage: input.stage ?? "Jito Endpoint",
@@ -260,7 +288,7 @@ export async function readAgentDecisions(): Promise<AgentDecision[]> {
     .map((line) => JSON.parse(line) as AgentDecision)
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 }
 
@@ -271,7 +299,7 @@ export function summarizeRuns(runs: BundleRun[]) {
     .map(
       (run) =>
         new Date(run.landed_at as string).getTime() -
-        new Date(run.submitted_at).getTime(),
+        new Date(run.submitted_at).getTime()
     )
     .filter((value) => Number.isFinite(value) && value >= 0)
     .sort((a, b) => a - b);
@@ -280,24 +308,28 @@ export function summarizeRuns(runs: BundleRun[]) {
   const medianLandingMs = landingDurations.length
     ? landingDurations.length % 2
       ? landingDurations[middle]
-      : Math.round((landingDurations[middle - 1] + landingDurations[middle]) / 2)
+      : Math.round(
+          (landingDurations[middle - 1] + landingDurations[middle]) / 2
+        )
     : null;
 
   // Compute multi-stage lifecycle deltas
   const processedToConfirmed = runs
     .filter((run) => run.processed_at && run.confirmed_at)
-    .map((run) =>
-      new Date(run.confirmed_at as string).getTime() -
-      new Date(run.processed_at as string).getTime(),
+    .map(
+      (run) =>
+        new Date(run.confirmed_at as string).getTime() -
+        new Date(run.processed_at as string).getTime()
     )
     .filter((value) => Number.isFinite(value) && value >= 0)
     .sort((a, b) => a - b);
 
   const confirmedToFinalized = runs
     .filter((run) => run.confirmed_at && run.finalized_at)
-    .map((run) =>
-      new Date(run.finalized_at as string).getTime() -
-      new Date(run.confirmed_at as string).getTime(),
+    .map(
+      (run) =>
+        new Date(run.finalized_at as string).getTime() -
+        new Date(run.confirmed_at as string).getTime()
     )
     .filter((value) => Number.isFinite(value) && value >= 0)
     .sort((a, b) => a - b);
@@ -305,7 +337,9 @@ export function summarizeRuns(runs: BundleRun[]) {
   const median = (arr: number[]) => {
     if (!arr.length) return null;
     const mid = Math.floor(arr.length / 2);
-    return arr.length % 2 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
+    return arr.length % 2
+      ? arr[mid]
+      : Math.round((arr[mid - 1] + arr[mid]) / 2);
   };
 
   return {
@@ -314,9 +348,11 @@ export function summarizeRuns(runs: BundleRun[]) {
     failed: runs.filter((run) => run.status === "Failed").length,
     invalid: runs.filter((run) => run.status === "Invalid").length,
     pending: runs.filter(
-      (run) => run.status === "Pending" || run.status === "Submitted",
+      (run) => run.status === "Pending" || run.status === "Submitted"
     ).length,
-    landedRate: runs.length ? Math.round((landedRuns.length / runs.length) * 100) : 0,
+    landedRate: runs.length
+      ? Math.round((landedRuns.length / runs.length) * 100)
+      : 0,
     medianLandingMs,
     medianProcessedToConfirmedMs: median(processedToConfirmed),
     medianConfirmedToFinalizedMs: median(confirmedToFinalized),
@@ -324,12 +360,16 @@ export function summarizeRuns(runs: BundleRun[]) {
 }
 
 export async function getDynamicTip() {
-  const response = await fetch("https://bundles.jito.wtf/api/v1/bundles/tip_floor", {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    "https://bundles.jito.wtf/api/v1/bundles/tip_floor",
+    {
+      cache: "no-store",
+    }
+  );
   const json = (await response.json()) as Array<Record<string, number>>;
   const first = json[0] ?? {};
-  const toLamports = (key: string) => Math.floor((first[key] ?? 0) * 1_000_000_000);
+  const toLamports = (key: string) =>
+    Math.floor((first[key] ?? 0) * 1_000_000_000);
   const sourceLamports = toLamports("landed_tips_75th_percentile");
   return {
     tipLamports: Math.min(Math.max(sourceLamports, 30_000), 100_000),
@@ -392,20 +432,29 @@ export async function getSnapshot(): Promise<ObservatorySnapshot> {
       detail: `${(balance / 1_000_000_000).toFixed(6)} SOL`,
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Failed to read Solana RPC";
+    const detail =
+      error instanceof Error ? error.message : "Failed to read Solana RPC";
     errors.push(detail);
     health.push({ label: "RPC", ok: false, detail });
   }
 
   try {
-    const [tip, accounts] = await Promise.all([getDynamicTip(), getTipAccounts()]);
+    const [tip, accounts] = await Promise.all([
+      getDynamicTip(),
+      getTipAccounts(),
+    ]);
     tipLamports = tip.tipLamports;
     tipSourceLamports = tip.sourceLamports;
     tipPercentiles = tip.percentiles;
     jitoTipAccounts = accounts.length;
-    health.push({ label: "Jito", ok: true, detail: `${accounts.length} tip accounts` });
+    health.push({
+      label: "Jito",
+      ok: true,
+      detail: `${accounts.length} tip accounts`,
+    });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Failed to read Jito data";
+    const detail =
+      error instanceof Error ? error.message : "Failed to read Jito data";
     errors.push(detail);
     health.push({ label: "Jito", ok: false, detail });
   }
@@ -422,16 +471,25 @@ export async function getSnapshot(): Promise<ObservatorySnapshot> {
   });
   try {
     await access(path.dirname(lifecyclePath));
-    health.push({ label: "Lifecycle Log", ok: true, detail: "writable path reachable" });
+    health.push({
+      label: "Lifecycle Log",
+      ok: true,
+      detail: "writable path reachable",
+    });
   } catch {
-    health.push({ label: "Lifecycle Log", ok: false, detail: "path not reachable" });
+    health.push({
+      label: "Lifecycle Log",
+      ok: false,
+      detail: "path not reachable",
+    });
   }
 
   return {
     slot,
     wallet,
     balanceLamports,
-    balanceSol: balanceLamports === null ? null : balanceLamports / 1_000_000_000,
+    balanceSol:
+      balanceLamports === null ? null : balanceLamports / 1_000_000_000,
     tipLamports,
     tipSourceLamports,
     tipPercentiles,
@@ -474,12 +532,15 @@ function extractJson(text: string) {
   return JSON.parse(text.slice(start, end + 1)) as Partial<AgentDecision>;
 }
 
-async function getAgentDecision(input: {
-  baseTipLamports: number;
-  sourceTipLamports: number;
-  balanceLamports: number;
-  runs: BundleRun[];
-}, onLog?: LogSink) {
+async function getAgentDecision(
+  input: {
+    baseTipLamports: number;
+    sourceTipLamports: number;
+    balanceLamports: number;
+    runs: BundleRun[];
+  },
+  onLog?: LogSink
+) {
   const apiKey = env("GROQ_API_KEY");
   const recentRuns = input.runs.slice(0, 6).map((run) => ({
     run_number: run.run_number,
@@ -501,9 +562,13 @@ async function getAgentDecision(input: {
       model: "local-policy",
       fallback: true,
       action: "submit",
-      recommended_tip_lamports: clampTip(input.baseTipLamports, input.baseTipLamports),
+      recommended_tip_lamports: clampTip(
+        input.baseTipLamports,
+        input.baseTipLamports
+      ),
       confidence: 0.54,
-      reason: "GROQ_API_KEY is not set, so the local policy used the live Jito floor.",
+      reason:
+        "GROQ_API_KEY is not set, so the local policy used the live Jito floor.",
       observed_risk: "AI unavailable",
     });
   }
@@ -542,29 +607,32 @@ async function getAgentDecision(input: {
         message: `AI agent requesting decision from ${model}`,
         data: { stage: "ai", model },
       });
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          max_tokens: 360,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are an autonomous Solana transaction operations agent. Return only valid JSON.",
-            },
-            {
-              role: "user",
-              content: JSON.stringify(prompt),
-            },
-          ],
-        }),
-      });
+      const response = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            max_tokens: 360,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an autonomous Solana transaction operations agent. Return only valid JSON.",
+              },
+              {
+                role: "user",
+                content: JSON.stringify(prompt),
+              },
+            ],
+          }),
+        }
+      );
 
       if (!response.ok) {
         lastError = `${model}: ${response.status} ${await response.text()}`;
@@ -592,11 +660,13 @@ async function getAgentDecision(input: {
             : "submit",
         recommended_tip_lamports: clampTip(
           Number(parsed.recommended_tip_lamports ?? input.baseTipLamports),
-          input.baseTipLamports,
+          input.baseTipLamports
         ),
         confidence: Math.min(Math.max(Number(parsed.confidence ?? 0.6), 0), 1),
         reason: String(parsed.reason ?? "Model selected the live Jito floor."),
-        observed_risk: String(parsed.observed_risk ?? "No unusual risk detected."),
+        observed_risk: String(
+          parsed.observed_risk ?? "No unusual risk detected."
+        ),
       };
       await onLog?.({
         level: "success",
@@ -630,14 +700,141 @@ async function getAgentDecision(input: {
     model: "local-policy-after-groq-failure",
     fallback: true,
     action: "submit",
-    recommended_tip_lamports: clampTip(input.baseTipLamports, input.baseTipLamports),
+    recommended_tip_lamports: clampTip(
+      input.baseTipLamports,
+      input.baseTipLamports
+    ),
     confidence: 0.5,
-    reason: "All Groq model attempts failed, so the local policy used the live Jito floor.",
+    reason:
+      "All Groq model attempts failed, so the local policy used the live Jito floor.",
     observed_risk: lastError || "Groq model chain unavailable",
   });
 }
 
-export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {}) {
+async function pollSignatureLifecycle(
+  connection: Connection,
+  signature: string,
+  onLog?: LogSink
+) {
+  let processed_at: string | null = null;
+  let confirmed_at: string | null = null;
+  let finalized_at: string | null = null;
+  let landed_slot: number | null = null;
+  let status: BundleStatus = "Submitted";
+  let errorReason: string | null = null;
+  let landedAt: string | null = null;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await onLog?.({
+      level: "info",
+      message: `Polling Solana signature status (${attempt + 1}/20)`,
+      data: { stage: "confirm", attempt: attempt + 1 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    try {
+      const signatureStatuses = await connection.getSignatureStatuses(
+        [signature],
+        {
+          searchTransactionHistory: true,
+        }
+      );
+      const signatureStatus = signatureStatuses.value[0];
+
+      if (!signatureStatus) {
+        await onLog?.({
+          level: "info",
+          message: "Signature not visible on-chain yet",
+        });
+        continue;
+      }
+
+      if (signatureStatus.err) {
+        status = "Failed";
+        errorReason = `Transaction failed on-chain: ${JSON.stringify(signatureStatus.err)}`;
+        await onLog?.({
+          level: "error",
+          message: errorReason,
+        });
+        break;
+      }
+
+      if (signatureStatus.slot) {
+        landed_slot = signatureStatus.slot;
+      }
+
+      const nowStr = new Date().toISOString();
+
+      if (
+        signatureStatus.confirmationStatus === "processed" ||
+        signatureStatus.confirmationStatus === "confirmed" ||
+        signatureStatus.confirmationStatus === "finalized"
+      ) {
+        if (!processed_at) {
+          processed_at = nowStr;
+          status = "Landed";
+          landedAt = nowStr;
+          await onLog?.({
+            level: "success",
+            message: `Observed Processed status on slot ${signatureStatus.slot}`,
+          });
+        }
+      }
+
+      if (
+        signatureStatus.confirmationStatus === "confirmed" ||
+        signatureStatus.confirmationStatus === "finalized"
+      ) {
+        if (!confirmed_at) {
+          confirmed_at = nowStr;
+          await onLog?.({
+            level: "success",
+            message: `Observed Confirmed status on slot ${signatureStatus.slot}`,
+          });
+        }
+      }
+
+      if (signatureStatus.confirmationStatus === "finalized") {
+        if (!finalized_at) {
+          finalized_at = nowStr;
+          await onLog?.({
+            level: "success",
+            message: `Observed Finalized status on slot ${signatureStatus.slot}`,
+          });
+        }
+        break;
+      }
+    } catch (err) {
+      console.error("Error polling signature status:", err);
+    }
+  }
+
+  if (status === "Submitted") {
+    status = "Pending";
+    errorReason =
+      "Submitted to Jito; confirmation still pending after dashboard poll window";
+    await onLog?.({
+      level: "warn",
+      message: errorReason,
+    });
+  }
+
+  return {
+    status,
+    landedAt,
+    errorReason,
+    processed_at,
+    confirmed_at,
+    finalized_at,
+    landed_slot,
+    confirmation_source: status === "Landed" ? "rpc_polling_fallback" : null,
+  };
+}
+
+export async function submitBundle(
+  onLog?: LogSink,
+  options: SubmitOptions = {}
+) {
   const profile = options.profile ?? "normal";
   await onLog?.({
     level: "info",
@@ -653,7 +850,8 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
 
   await onLog?.({
     level: "info",
-    message: "Fetching live Jito tip floor, tip accounts, and lifecycle history",
+    message:
+      "Fetching live Jito tip floor, tip accounts, and lifecycle history",
     data: { stage: "preflight" },
   });
   const [tip, tipAccounts, runs] = await Promise.all([
@@ -671,18 +869,24 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
     },
   });
 
-  const balanceLamports = await connection.getBalance(keypair.publicKey, "confirmed");
+  const balanceLamports = await connection.getBalance(
+    keypair.publicKey,
+    "confirmed"
+  );
   await onLog?.({
     level: "info",
     message: `Wallet balance: ${balanceLamports} lamports (${(balanceLamports / 1_000_000_000).toFixed(6)} SOL)`,
   });
 
-  const decision = await getAgentDecision({
-    baseTipLamports: tip.tipLamports,
-    sourceTipLamports: tip.sourceLamports,
-    balanceLamports,
-    runs,
-  }, onLog);
+  const decision = await getAgentDecision(
+    {
+      baseTipLamports: tip.tipLamports,
+      sourceTipLamports: tip.sourceLamports,
+      balanceLamports,
+      runs,
+    },
+    onLog
+  );
 
   if (decision.action === "hold") {
     await onLog?.({
@@ -693,7 +897,8 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
   }
 
   const runNumber = Math.max(0, ...runs.map((run) => run.run_number)) + 1;
-  const tipAccount = tipAccounts[Math.floor(Math.random() * tipAccounts.length)];
+  const tipAccount =
+    tipAccounts[Math.floor(Math.random() * tipAccounts.length)];
   const tipPubkey = new PublicKey(tipAccount);
   const profileTip =
     profile === "congestion-stress"
@@ -737,7 +942,7 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
       fromPubkey: keypair.publicKey,
       toPubkey: tipPubkey,
       lamports: profileTip,
-    }),
+    })
   );
 
   if (injectRuntimeFailure) {
@@ -746,7 +951,7 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
         fromPubkey: keypair.publicKey,
         toPubkey: FAILURE_SINK_PUBKEY,
         lamports: failureLamports,
-      }),
+      })
     );
     await onLog?.({
       level: "warn",
@@ -889,74 +1094,37 @@ export async function submitBundle(onLog?: LogSink, options: SubmitOptions = {})
     return invalidRun;
   }
 
+  const submit_slot = await connection.getSlot("confirmed").catch(() => null);
   const submittedAt = new Date();
-  let landedAt: string | null = null;
-  let status: BundleStatus = "Submitted";
-  let errorReason: string | null = null;
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await onLog?.({
-      level: "info",
-      message: `Polling Solana signature status (${attempt + 1}/5)`,
-      data: { stage: "confirm", attempt: attempt + 1 },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    const signatureStatuses = await connection.getSignatureStatuses([signature]);
-    const signatureStatus = signatureStatuses.value[0];
-    if (signatureStatus?.err) {
-      status = "Failed";
-      errorReason = `Transaction failed on-chain: ${JSON.stringify(signatureStatus.err)}`;
-      await onLog?.({
-        level: "error",
-        message: errorReason,
-      });
-      break;
-    }
-    if (signatureStatus?.confirmationStatus) {
-      status = "Landed";
-      landedAt = new Date().toISOString();
-      await onLog?.({
-        level: "success",
-        message: `Bundle transaction landed on-chain (${signatureStatus.confirmationStatus})`,
-      });
-      break;
-    }
-    await onLog?.({
-      level: "info",
-      message: "Signature not visible on-chain yet",
-    });
-  }
-
-  if (status === "Submitted") {
-    status = "Pending";
-    errorReason = "Submitted to Jito; confirmation still pending after dashboard poll window";
-    await onLog?.({
-      level: "warn",
-      message: errorReason,
-    });
-  }
+  const lifecycle = await pollSignatureLifecycle(connection, signature, onLog);
 
   const run = await appendRun({
     bundle_id: bundleId || signature,
     signature,
     tip_lamports: profileTip,
     tip_account: tipAccount,
-    status,
+    status: lifecycle.status,
     submitted_at: submittedAt.toISOString(),
-    landed_at: landedAt,
-    error_reason: errorReason,
+    landed_at: lifecycle.landedAt,
+    error_reason: lifecycle.errorReason,
     run_number: runNumber,
     profile,
     ai_decision_id: decision.id,
+    submit_slot,
+    landed_slot: lifecycle.landed_slot,
+    processed_at: lifecycle.processed_at,
+    confirmed_at: lifecycle.confirmed_at,
+    finalized_at: lifecycle.finalized_at,
+    confirmation_source: lifecycle.confirmation_source,
     ...classifyFailure({
-      status,
+      status: lifecycle.status,
       profile,
-      error: errorReason,
-      stage: status === "Failed" ? "Solana Runtime" : "Confirmation",
+      error: lifecycle.errorReason,
+      stage: lifecycle.status === "Failed" ? "Solana Runtime" : "Confirmation",
     }),
   });
   await onLog?.({
-    level: status === "Landed" ? "success" : "warn",
+    level: lifecycle.status === "Landed" ? "success" : "warn",
     message: `Logged run #${runNumber} -> ${run.bundle_id} | status=${run.status}`,
   });
   return run;
@@ -980,14 +1148,16 @@ async function submitRetry(input: {
   }).add(
     new TransactionInstruction({
       programId: MEMO_PROGRAM_ID,
-      keys: [{ pubkey: input.keypair.publicKey, isSigner: true, isWritable: false }],
+      keys: [
+        { pubkey: input.keypair.publicKey, isSigner: true, isWritable: false },
+      ],
       data: Buffer.from(memo, "utf8"),
     }),
     SystemProgram.transfer({
       fromPubkey: input.keypair.publicKey,
       toPubkey: input.tipPubkey,
       lamports: input.tipLamports,
-    }),
+    })
   );
   tx.sign(input.keypair);
   await input.onLog?.({
@@ -1059,43 +1229,42 @@ async function submitRetry(input: {
       }),
     });
   }
+  const submit_slot = await input.connection
+    .getSlot("confirmed")
+    .catch(() => null);
   const submittedAt = new Date();
-  let landedAt: string | null = null;
-  let status: BundleStatus = "Pending";
-  let errorReason: string | null = "Retry submitted; confirmation pending after dashboard poll window";
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    const signatureStatuses = await input.connection.getSignatureStatuses([signature]);
-    const signatureStatus = signatureStatuses.value[0];
-    if (signatureStatus?.err) {
-      status = "Failed";
-      errorReason = `Retry failed on-chain: ${JSON.stringify(signatureStatus.err)}`;
-      break;
-    }
-    if (signatureStatus?.confirmationStatus) {
-      status = "Landed";
-      landedAt = new Date().toISOString();
-      errorReason = null;
-      break;
-    }
-  }
+  const lifecycle = await pollSignatureLifecycle(
+    input.connection,
+    signature,
+    input.onLog
+  );
+
   return appendRun({
     bundle_id: bundleId || signature,
     signature,
     tip_lamports: input.tipLamports,
     tip_account: input.tipAccount,
-    status,
+    status: lifecycle.status,
     submitted_at: submittedAt.toISOString(),
-    landed_at: landedAt,
-    error_reason: errorReason,
+    landed_at: lifecycle.landedAt,
+    error_reason: lifecycle.errorReason,
     run_number: input.runNumber,
     profile: "ai-retry-test",
     ai_decision_id: input.decisionId,
+    submit_slot,
+    landed_slot: lifecycle.landed_slot,
+    processed_at: lifecycle.processed_at,
+    confirmed_at: lifecycle.confirmed_at,
+    finalized_at: lifecycle.finalized_at,
+    confirmation_source: lifecycle.confirmation_source,
     ...classifyFailure({
-      status,
+      status: lifecycle.status,
       profile: "ai-retry-test",
-      error: errorReason,
-      stage: "Retry Confirmation",
+      error: lifecycle.errorReason,
+      stage:
+        lifecycle.status === "Failed"
+          ? "Retry Solana Runtime"
+          : "Retry Confirmation",
     }),
   });
 }
@@ -1141,8 +1310,8 @@ export async function buildEvidenceMarkdown() {
     "",
     "## Lifecycle Log",
     "",
-    "| Run | Status | Tip | Submit Slot | Landed Slot | Proc->Conf | Conf->Final | Signature | Failure | Recovery |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    "| Run | Status | Confirmation | Tip | Submit Slot | Landed Slot | Proc->Conf | Conf->Final | Signature | Failure | Recovery |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
     ...runs
       .slice()
       .sort((a, b) => a.run_number - b.run_number)
@@ -1152,7 +1321,7 @@ export async function buildEvidenceMarkdown() {
           : "";
         const procToConf = fmtDelta(run.processed_at, run.confirmed_at);
         const confToFinal = fmtDelta(run.confirmed_at, run.finalized_at);
-        return `| ${run.run_number} | ${run.status} | ${run.tip_lamports} | ${run.submit_slot ?? "--"} | ${run.landed_slot ?? "--"} | ${procToConf} | ${confToFinal} | ${sig} | ${run.failure_type ?? ""} | ${run.recovery ?? ""} |`;
+        return `| ${run.run_number} | ${run.status} | ${run.confirmation_source ?? "--"} | ${run.tip_lamports} | ${run.submit_slot ?? "--"} | ${run.landed_slot ?? "--"} | ${procToConf} | ${confToFinal} | ${sig} | ${run.failure_type ?? ""} | ${run.recovery ?? ""} |`;
       }),
     "",
     "## AI Decisions",
@@ -1161,9 +1330,8 @@ export async function buildEvidenceMarkdown() {
     "| --- | --- | --- | ---: | ---: | --- |",
     ...decisions.map(
       (decision) =>
-        `| ${decision.created_at} | ${decision.model} | ${decision.action} | ${decision.recommended_tip_lamports} | ${Math.round(decision.confidence * 100)}% | ${decision.reason.replace(/\|/g, "/")} |`,
+        `| ${decision.created_at} | ${decision.model} | ${decision.action} | ${decision.recommended_tip_lamports} | ${Math.round(decision.confidence * 100)}% | ${decision.reason.replace(/\|/g, "/")} |`
     ),
   ];
   return lines.join("\n");
 }
-

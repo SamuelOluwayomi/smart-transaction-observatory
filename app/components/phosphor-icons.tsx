@@ -56,9 +56,7 @@ function createIcon(paths: IconPath[]) {
   return Icon;
 }
 
-export const Activity = createIcon([
-  { d: "M3 12h4l2-7 4 14 2-7h6" },
-]);
+export const Activity = createIcon([{ d: "M3 12h4l2-7 4 14 2-7h6" }]);
 
 export const ArrowSquareOut = createIcon([
   { type: "rect", attrs: { x: 4, y: 5, width: 15, height: 15, rx: 1 } },
@@ -97,9 +95,7 @@ export const GitBranch = createIcon([
   { type: "circle", attrs: { cx: 17, cy: 18, r: 2 } },
 ]);
 
-export const Lightning = createIcon([
-  { d: "M13 2 4 14h7l-1 8 10-13h-7l0-7z" },
-]);
+export const Lightning = createIcon([{ d: "M13 2 4 14h7l-1 8 10-13h-7l0-7z" }]);
 
 export const LockKey = createIcon([
   { type: "rect", attrs: { x: 5, y: 10, width: 14, height: 10, rx: 1 } },
@@ -107,9 +103,7 @@ export const LockKey = createIcon([
   { d: "M12 14v2" },
 ]);
 
-export const Play = createIcon([
-  { d: "M8 5v14l11-7z" },
-]);
+export const Play = createIcon([{ d: "M8 5v14l11-7z" }]);
 
 export const PlugsConnected = createIcon([
   { d: "M8 8 5 5M16 16l3 3" },

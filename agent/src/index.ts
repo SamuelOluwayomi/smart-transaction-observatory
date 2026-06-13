@@ -76,10 +76,14 @@ function loadEnv(): Record<string, string> {
     const lines = readFileSync(p, "utf8").split(/\r?\n/);
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+      if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("="))
+        continue;
       const idx = trimmed.indexOf("=");
       const key = trimmed.slice(0, idx).trim();
-      const val = trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, "");
+      const val = trimmed
+        .slice(idx + 1)
+        .trim()
+        .replace(/^['"]|['"]$/g, "");
       vars[key] = val;
     }
   }
@@ -107,9 +111,12 @@ function readLifecycleLog(): BundleRun[] {
 
 async function fetchTipFloor(): Promise<TipFloorEntry | null> {
   try {
-    const resp = await fetch("https://bundles.jito.wtf/api/v1/bundles/tip_floor", {
-      signal: AbortSignal.timeout(8000),
-    });
+    const resp = await fetch(
+      "https://bundles.jito.wtf/api/v1/bundles/tip_floor",
+      {
+        signal: AbortSignal.timeout(8000),
+      }
+    );
     const json = (await resp.json()) as TipFloorEntry[];
     return json[0] ?? null;
   } catch {
@@ -124,7 +131,12 @@ async function fetchSlot(): Promise<number | null> {
     const resp = await fetch(rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSlot", params: [{ commitment: "confirmed" }] }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getSlot",
+        params: [{ commitment: "confirmed" }],
+      }),
       signal: AbortSignal.timeout(8000),
     });
     const json = (await resp.json()) as { result?: number };
@@ -148,12 +160,20 @@ async function fetchBalance(): Promise<number | null> {
 // Core reasoning engine
 // ---------------------------------------------------------------------------
 
-function analyzeState(runs: BundleRun[], tipFloor: TipFloorEntry | null, slot: number | null) {
+function analyzeState(
+  runs: BundleRun[],
+  tipFloor: TipFloorEntry | null,
+  slot: number | null
+) {
   const recentRuns = runs.slice(0, 10);
   const landedRuns = recentRuns.filter((r) => r.status === "Landed");
-  const failedRuns = recentRuns.filter((r) => r.status === "Failed" || r.status === "Invalid");
+  const failedRuns = recentRuns.filter(
+    (r) => r.status === "Failed" || r.status === "Invalid"
+  );
 
-  const landedRate = recentRuns.length ? landedRuns.length / recentRuns.length : 0;
+  const landedRate = recentRuns.length
+    ? landedRuns.length / recentRuns.length
+    : 0;
   const recentTips = landedRuns.map((r) => r.tip_lamports).filter((t) => t > 0);
   const avgLandedTip = recentTips.length
     ? Math.round(recentTips.reduce((a, b) => a + b, 0) / recentTips.length)
@@ -162,11 +182,15 @@ function analyzeState(runs: BundleRun[], tipFloor: TipFloorEntry | null, slot: n
   // Lifecycle health: compute avg processed->confirmed delta
   const lifecycleDeltas = recentRuns
     .filter((r) => r.processed_at && r.confirmed_at)
-    .map((r) =>
-      new Date(r.confirmed_at!).getTime() - new Date(r.processed_at!).getTime()
+    .map(
+      (r) =>
+        new Date(r.confirmed_at!).getTime() -
+        new Date(r.processed_at!).getTime()
     );
   const avgDeltaMs = lifecycleDeltas.length
-    ? Math.round(lifecycleDeltas.reduce((a, b) => a + b, 0) / lifecycleDeltas.length)
+    ? Math.round(
+        lifecycleDeltas.reduce((a, b) => a + b, 0) / lifecycleDeltas.length
+      )
     : null;
 
   // Failure pattern analysis
@@ -174,7 +198,9 @@ function analyzeState(runs: BundleRun[], tipFloor: TipFloorEntry | null, slot: n
     .map((r) => r.failure_type)
     .filter(Boolean) as string[];
   const hasRateLimits = failureTypes.some((t) => t.includes("rate_limit"));
-  const hasBlockhashExpiry = failureTypes.some((t) => t.includes("blockhash") || t.includes("expired"));
+  const hasBlockhashExpiry = failureTypes.some(
+    (t) => t.includes("blockhash") || t.includes("expired")
+  );
 
   // Tip floor data
   const p75Lamports = tipFloor
@@ -199,7 +225,9 @@ function analyzeState(runs: BundleRun[], tipFloor: TipFloorEntry | null, slot: n
   };
 }
 
-function makeLocalDecision(analysis: ReturnType<typeof analyzeState>): AgentDecision {
+function makeLocalDecision(
+  analysis: ReturnType<typeof analyzeState>
+): AgentDecision {
   const {
     landedRate,
     avgLandedTip,
@@ -213,14 +241,21 @@ function makeLocalDecision(analysis: ReturnType<typeof analyzeState>): AgentDeci
   } = analysis;
 
   // Base tip: use p75 from Jito, floored at 30k, capped at 100k
-  let recommendedTip = Math.min(Math.max(p75Lamports || avgLandedTip, 30_000), 100_000);
+  let recommendedTip = Math.min(
+    Math.max(p75Lamports || avgLandedTip, 30_000),
+    100_000
+  );
   let action: "submit" | "hold" | "retry" = "submit";
   let confidence = 0.75;
   let reason = "";
   let risk = "";
 
   // Decision: RETRY if recent failures dominate and they're recoverable
-  if (landedRate < 0.5 && totalRuns >= 3 && (hasBlockhashExpiry || hasRateLimits)) {
+  if (
+    landedRate < 0.5 &&
+    totalRuns >= 3 &&
+    (hasBlockhashExpiry || hasRateLimits)
+  ) {
     action = "retry";
     confidence = 0.68;
     // Bump tip above average for retry
@@ -235,7 +270,8 @@ function makeLocalDecision(analysis: ReturnType<typeof analyzeState>): AgentDeci
     action = "hold";
     confidence = 0.6;
     reason = `Landed rate critically low at ${Math.round(landedRate * 100)}%. Holding until network conditions improve. Last failures: ${failureTypes.slice(0, 3).join(", ") || "unknown"}.`;
-    risk = "Sustained failure rate suggests systemic issue (congestion or misconfiguration).";
+    risk =
+      "Sustained failure rate suggests systemic issue (congestion or misconfiguration).";
   }
   // Decision: SUBMIT (default healthy path)
   else {
@@ -255,9 +291,10 @@ function makeLocalDecision(analysis: ReturnType<typeof analyzeState>): AgentDeci
     } else {
       confidence = 0.78;
       reason = `Landing rate ${Math.round(landedRate * 100)}% is acceptable. Using standard p75 tip of ${recommendedTip} lamports.`;
-      risk = totalRuns < 3
-        ? "Limited run history; confidence will improve with more observations."
-        : "Normal operating conditions.";
+      risk =
+        totalRuns < 3
+          ? "Limited run history; confidence will improve with more observations."
+          : "Normal operating conditions.";
     }
   }
 
@@ -276,12 +313,15 @@ function makeLocalDecision(analysis: ReturnType<typeof analyzeState>): AgentDeci
 
 async function makeGroqDecision(
   analysis: ReturnType<typeof analyzeState>,
-  localDecision: AgentDecision,
+  localDecision: AgentDecision
 ): Promise<AgentDecision | null> {
   const apiKey = env("GROQ_API_KEY");
   if (!apiKey) return null;
 
-  const models = (env("GROQ_MODELS") ?? "openai/gpt-oss-120b,llama-3.3-70b-versatile,llama-3.1-8b-instant")
+  const models = (
+    env("GROQ_MODELS") ??
+    "openai/gpt-oss-120b,llama-3.3-70b-versatile,llama-3.1-8b-instant"
+  )
     .split(",")
     .map((m) => m.trim())
     .filter(Boolean);
@@ -322,29 +362,35 @@ async function makeGroqDecision(
 
   for (const model of models) {
     try {
-      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          max_tokens: 360,
-          messages: [
-            {
-              role: "system",
-              content: "You are an autonomous Solana transaction operations agent. Return only valid JSON matching the output_contract.",
-            },
-            { role: "user", content: JSON.stringify(prompt) },
-          ],
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
+      const resp = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            max_tokens: 360,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an autonomous Solana transaction operations agent. Return only valid JSON matching the output_contract.",
+              },
+              { role: "user", content: JSON.stringify(prompt) },
+            ],
+          }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
 
       if (!resp.ok) {
-        console.log(`[agent] Groq model ${model} returned ${resp.status}, trying next...`);
+        console.log(
+          `[agent] Groq model ${model} returned ${resp.status}, trying next...`
+        );
         continue;
       }
 
@@ -356,7 +402,9 @@ async function makeGroqDecision(
       const end = content.lastIndexOf("}");
       if (start === -1 || end <= start) throw new Error("No JSON in response");
 
-      const parsed = JSON.parse(content.slice(start, end + 1)) as Partial<AgentDecision>;
+      const parsed = JSON.parse(
+        content.slice(start, end + 1)
+      ) as Partial<AgentDecision>;
 
       return {
         id: randomUUID(),
@@ -368,15 +416,27 @@ async function makeGroqDecision(
             ? parsed.action
             : "submit",
         recommended_tip_lamports: Math.min(
-          Math.max(Math.round(Number(parsed.recommended_tip_lamports ?? localDecision.recommended_tip_lamports)), 30_000),
-          150_000,
+          Math.max(
+            Math.round(
+              Number(
+                parsed.recommended_tip_lamports ??
+                  localDecision.recommended_tip_lamports
+              )
+            ),
+            30_000
+          ),
+          150_000
         ),
         confidence: Math.min(Math.max(Number(parsed.confidence ?? 0.6), 0), 1),
         reason: String(parsed.reason ?? localDecision.reason),
-        observed_risk: String(parsed.observed_risk ?? localDecision.observed_risk),
+        observed_risk: String(
+          parsed.observed_risk ?? localDecision.observed_risk
+        ),
       };
     } catch (err) {
-      console.log(`[agent] Groq model ${model} failed: ${err instanceof Error ? err.message : err}`);
+      console.log(
+        `[agent] Groq model ${model} failed: ${err instanceof Error ? err.message : err}`
+      );
     }
   }
 
@@ -402,9 +462,15 @@ async function main() {
 
   // 2. Analyze
   const analysis = analyzeState(runs, tipFloor, slot);
-  console.log(`[agent] Recent landed rate: ${Math.round(analysis.landedRate * 100)}%`);
-  console.log(`[agent] Avg processed->confirmed: ${analysis.avgDeltaMs ?? "no data"}ms`);
-  console.log(`[agent] Recent failure types: ${analysis.failureTypes.join(", ") || "none"}`);
+  console.log(
+    `[agent] Recent landed rate: ${Math.round(analysis.landedRate * 100)}%`
+  );
+  console.log(
+    `[agent] Avg processed->confirmed: ${analysis.avgDeltaMs ?? "no data"}ms`
+  );
+  console.log(
+    `[agent] Recent failure types: ${analysis.failureTypes.join(", ") || "none"}`
+  );
 
   // 3. Make local decision
   const localDecision = makeLocalDecision(analysis);
@@ -419,14 +485,18 @@ async function main() {
   const groqDecision = await makeGroqDecision(analysis, localDecision);
   const finalDecision = groqDecision ?? localDecision;
   if (groqDecision) {
-    console.log(`\n[agent] Groq-enhanced decision (model: ${groqDecision.model}):`);
+    console.log(
+      `\n[agent] Groq-enhanced decision (model: ${groqDecision.model}):`
+    );
     console.log(`  Action: ${groqDecision.action}`);
     console.log(`  Tip: ${groqDecision.recommended_tip_lamports} lamports`);
     console.log(`  Confidence: ${Math.round(groqDecision.confidence * 100)}%`);
     console.log(`  Reason: ${groqDecision.reason}`);
     console.log(`  Risk: ${groqDecision.observed_risk}`);
   } else {
-    console.log(`\n[agent] Using local reasoning (Groq unavailable or all models failed)`);
+    console.log(
+      `\n[agent] Using local reasoning (Groq unavailable or all models failed)`
+    );
     finalDecision.fallback = true;
   }
 

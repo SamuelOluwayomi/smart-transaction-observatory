@@ -15,7 +15,7 @@ export async function GET() {
             ? error.message
             : "Failed to build observatory snapshot",
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

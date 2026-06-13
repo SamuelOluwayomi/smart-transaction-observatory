@@ -6,7 +6,10 @@ The observatory is a full-stack transaction operations system. It streams live S
 
 ## Current Status & Bounty Features
 
-- **Yellowstone gRPC Integration**: Active background stream tracking live `Processed` slots. Every bundle submission records the exact network slot at the time of submission (`submit_slot`).
+- **Yellowstone gRPC Integration & Concurrency Design**:
+  - The codebase utilizes a background task to maintain a live connection to the Yellowstone gRPC stream, subscribing to slot updates at the `Processed` commitment level.
+  - Due to standard gRPC infrastructure tier limits (e.g., Solinfra's Ace/Free plans limiting accounts to exactly **1 concurrent gRPC stream**), this single connection is fully dedicated to the live slot stream background task (`run_slot_stream()`).
+  - To prevent stream exhaustion errors from blocking transaction confirmations, the engine is designed with a **robust fallback path**: if a secondary gRPC watcher stream is blocked due to the 1-stream tier limit, the engine automatically falls back to HTTP RPC polling (`getSignatureStatuses`) to track the multi-stage commitment levels (`Processed` -> `Confirmed` -> `Finalized`), ensuring no logs or confirmations are lost.
 - **Multi-Stage Lifecycle Tracking**: The engine polls each commitment level individually (`Processed` -> `Confirmed` -> `Finalized`), recording timestamps and calculating the latency deltas between stages.
 - **Autonomous AI Agent Layer**: A cleanly separated `agent/` module reads the lifecycle log, analyzes Jito tip floors and network congestion, and makes autonomous `submit`/`hold`/`retry` decisions with visible risk reasoning.
 - **Dynamic Tip Selection**: Base tips are selected from the 75th percentile of Jito's live tip floor API, with automatic premiums added by the AI agent during high-latency periods.
@@ -18,22 +21,26 @@ The observatory is a full-stack transaction operations system. It streams live S
 
 Please see the [Architecture Document](ARCHITECTURE.md) for a detailed breakdown of the system components.
 
-*Note for Bounty Submission: The contents of `ARCHITECTURE.md` should be copied to a public Notion or Google Doc and linked here to fully satisfy the "publicly hosted architecture document" requirement.*
+_Note for Bounty Submission: The contents of `ARCHITECTURE.md` should be copied to a public Notion or Google Doc and linked here to fully satisfy the "publicly hosted architecture document" requirement._
 
 ## Bounty Technical Questions
 
 Based on the operational evidence gathered by this stack, here are the answers to the three mandatory bounty questions:
 
 ### Q1: What does the delta between processed_at and confirmed_at tell you?
-The delta between `Processed` and `Confirmed` represents the time it takes for a supermajority (66%+) of the Solana validator network to vote on and ratify the block containing the transaction. 
+
+The delta between `Processed` and `Confirmed` represents the time it takes for a supermajority (66%+) of the Solana validator network to vote on and ratify the block containing the transaction.
+
 - **Low Delta (e.g., 400-800ms)**: Indicates a healthy, highly responsive network with fast vote propagation.
 - **High Delta (e.g., >2000ms)**: Indicates network congestion, validator fork resolution, or heavy voting load. In our stack, the AI Agent monitors this delta; if the median latency spikes, the agent autonomously increases the Jito tip premium to prioritize our bundles during the congestion.
 
 ### Q2: Why should you never use finalized commitment for your blockhash in time-sensitive transactions?
+
 A blockhash remains valid for exactly 150 slots. By using a `Finalized` blockhash (which is already ~32 slots or ~12.8 seconds old by the time you fetch it), you are artificially shortening the validity window of your transaction by roughly 20%. In time-sensitive operations, every second counts. Using a `Confirmed` or `Processed` blockhash ensures you have the maximum possible runway (the full 150 slots) for your transaction to land and be retried if necessary before it expires.
 
 ### Q3: What happens to your bundle if the Jito leader skips their slot?
-If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the *next* available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
+
+If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the _next_ available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
 
 ## What To Use For Jito
 

@@ -46,8 +46,8 @@ export async function POST(request: Request) {
             encodeEvent({
               level: "info",
               message: "[stream:end]",
-            }),
-          ),
+            })
+          )
         );
         controller.close();
       }

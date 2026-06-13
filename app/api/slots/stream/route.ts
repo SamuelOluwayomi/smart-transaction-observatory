@@ -12,7 +12,7 @@ export async function GET() {
       const write = (payload: Record<string, unknown>) => {
         if (!closed) {
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)
           );
         }
       };
