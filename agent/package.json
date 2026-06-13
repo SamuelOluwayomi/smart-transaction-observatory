@@ -1,0 +1,13 @@
+{
+  "name": "smart-tx-agent",
+  "version": "1.0.0",
+  "description": "Autonomous AI agent for Solana transaction operational decisions",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "npx tsx src/index.ts",
+    "watch": "npx tsx --watch src/index.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.19.0"
+  }
+}

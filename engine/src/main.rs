@@ -5,29 +5,34 @@ mod lifecycle;
 
 use anyhow::Result;
 use solana_sdk::signature::{Keypair, Signer};
-use tracing::{info, error};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::Notify;
+use tracing::{info, warn, error};
+
+/// Shared state between the Yellowstone slot stream and the main submission loop.
+struct SlotState {
+    latest_slot: AtomicU64,
+    slot_updated: Notify,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .init();
 
     info!("Starting Smart Transaction Observatory Engine...");
 
-    // Load config from .env
     let config = config::Config::from_env()?;
     info!("Config loaded.");
 
-    // Parse the wallet keypair
     let wallet_bytes: Vec<u8> = serde_json::from_str(&config.wallet_private_key)
         .expect("WALLET_PRIVATE_KEY must be a JSON array of bytes, e.g. [1,2,3,...]");
     let keypair = Keypair::try_from(wallet_bytes.as_slice())
         .expect("Invalid keypair bytes");
     info!("Wallet: {}", keypair.pubkey());
 
-    // Check wallet balance
     let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(config.solana_rpc_url.clone());
     let balance = rpc_client.get_balance(&keypair.pubkey())?;
     info!("Wallet balance: {} lamports ({:.6} SOL)", balance, balance as f64 / 1e9);
@@ -36,14 +41,45 @@ async fn main() -> Result<()> {
         anyhow::bail!("Wallet balance too low for bundle submissions. Need at least 50,000 lamports.");
     }
 
-    // Clean stale lifecycle log from previous runs
+    // Clean stale lifecycle logs from previous runs
     let log_path = std::path::Path::new("lifecycle_log.jsonl");
     if log_path.exists() {
         info!("Removing stale lifecycle_log.jsonl from previous run");
         std::fs::remove_file(log_path).ok();
     }
+    let project_log = std::path::Path::new("../logs/lifecycle_log.jsonl");
+    if project_log.exists() {
+        std::fs::remove_file(project_log).ok();
+    }
 
-    // Run bundle submissions
+    // Capture the initial slot from Solana RPC before we start
+    let slot_state = Arc::new(SlotState {
+        latest_slot: AtomicU64::new(0),
+        slot_updated: Notify::new(),
+    });
+
+    let initial_slot = rpc_client.get_slot().unwrap_or(0);
+    slot_state.latest_slot.store(initial_slot, Ordering::Relaxed);
+    info!("Initial RPC slot: {}", initial_slot);
+
+    // Spawn Yellowstone gRPC slot stream as a background task
+    let ys_state = Arc::clone(&slot_state);
+    let ys_endpoint = config.yellowstone_endpoint.clone();
+    let ys_token = config.yellowstone_token.clone();
+    let _slot_handle = tokio::spawn(async move {
+        info!("Launching Yellowstone slot stream background task...");
+        match run_slot_stream(ys_endpoint, ys_token, ys_state).await {
+            Ok(()) => info!("Yellowstone slot stream ended normally"),
+            Err(e) => warn!("Yellowstone slot stream error (non-fatal): {}", e),
+        }
+    });
+
+    // Brief pause to let slot stream connect (non-blocking to the main loop)
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    // ===================================================================
+    //  Bundle submission loop
+    // ===================================================================
     info!("===============================================");
     info!("  Phase: Jito Bundle Submission");
     info!("===============================================");
@@ -55,26 +91,27 @@ async fn main() -> Result<()> {
         info!("Bundle Run {}/{}", run_num, total_runs);
         info!("---------------------------------------------");
 
-        // Determine tip: runs 11 and 12 are intentional failures
-        let (tip_lamports, memo_text) = match run_num {
+        // Log the current slot from Yellowstone (or RPC fallback)
+        let current_slot = slot_state.latest_slot.load(Ordering::Relaxed);
+        info!("Current observed slot: {}", current_slot);
+
+        // Determine tip and failure injection
+        let (tip_lamports, memo_text, intentional_failure) = match run_num {
             11 => {
-                // Intentional failure: tip = 0 (below minimum, should be rejected)
                 info!("INTENTIONAL FAILURE: tip = 0 lamports (below minimum)");
-                (0u64, "Smart TX Observatory | FAIL TEST: zero tip")
+                (0u64, "Smart TX Observatory | FAIL TEST: zero tip", true)
             }
             12 => {
-                // Intentional failure: we still send a valid tx but with a very old memo
-                // to demonstrate failure logging (tip_lamports = 1, likely too low)
                 info!("INTENTIONAL FAILURE: tip = 1 lamport (below floor)");
-                (1u64, "Smart TX Observatory | FAIL TEST: micro tip")
+                (1u64, "Smart TX Observatory | FAIL TEST: micro tip", true)
             }
             _ => {
-                // Normal run: get dynamic tip
                 let tip = jito::get_dynamic_tip(&config.solana_rpc_url).await?;
-                (tip, "Smart TX Observatory | bounty demo")
+                (tip, "Smart TX Observatory | bounty demo", false)
             }
         };
 
+        // Submit the bundle
         let result = jito::build_and_submit_bundle(
             &config.solana_rpc_url,
             &config.jito_block_engine_url,
@@ -87,7 +124,10 @@ async fn main() -> Result<()> {
 
         match result {
             Ok(mut run) => {
-                // Track the bundle lifecycle (poll for confirmation)
+                // Record the slot at time of submission
+                run.submit_slot = Some(slot_state.latest_slot.load(Ordering::Relaxed));
+
+                // Track the bundle lifecycle (poll for multi-stage confirmation)
                 if run.status == lifecycle::BundleStatus::Submitted {
                     let bid = run.bundle_id.clone();
                     lifecycle::track_bundle(
@@ -95,40 +135,133 @@ async fn main() -> Result<()> {
                         &config.solana_rpc_url,
                         &bid,
                         &mut run,
-                        10,    // max 10 polls
-                        6000,  // every 6 seconds = 60s max wait
+                        15,    // max 15 polls
+                        4000,  // every 4 seconds = 60s max wait
                     )
                     .await;
                 }
 
-                // Log to lifecycle file
+                // Classify intentional failures that might have "succeeded" anyway
+                if intentional_failure && run.status != lifecycle::BundleStatus::Landed {
+                    if run.failure_type.is_none() {
+                        match run_num {
+                            11 => run.classify_failure(
+                                "zero_tip",
+                                "tip_calculation",
+                                "Tip was 0 lamports; Jito requires a nonzero tip to include bundles",
+                            ),
+                            12 => run.classify_failure(
+                                "tip_below_floor",
+                                "tip_calculation",
+                                "Tip was 1 lamport; well below the Jito tip floor for auction inclusion",
+                            ),
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Automatic retry with blockhash refresh for non-intentional failures
+                if !intentional_failure
+                    && run.status != lifecycle::BundleStatus::Landed
+                    && run.status != lifecycle::BundleStatus::Pending
+                {
+                    info!("Run #{} failed ({}), attempting autonomous retry with fresh blockhash...", run_num, run.status);
+                    run.recovery = Some("Autonomous retry with fresh blockhash and recalculated tip".to_string());
+
+                    // Recalculate tip for the retry
+                    let retry_tip = jito::get_dynamic_tip(&config.solana_rpc_url).await.unwrap_or(30_000);
+                    info!("Retry tip: {} lamports", retry_tip);
+
+                    let retry_result = jito::build_and_submit_bundle(
+                        &config.solana_rpc_url,
+                        &config.jito_block_engine_url,
+                        &keypair,
+                        retry_tip,
+                        run_num,
+                        "Smart TX Observatory | auto-retry",
+                    )
+                    .await;
+
+                    match retry_result {
+                        Ok(mut retry_run) => {
+                            retry_run.submit_slot = Some(slot_state.latest_slot.load(Ordering::Relaxed));
+
+                            if retry_run.status == lifecycle::BundleStatus::Submitted {
+                                let bid = retry_run.bundle_id.clone();
+                                lifecycle::track_bundle(
+                                    &config.jito_block_engine_url,
+                                    &config.solana_rpc_url,
+                                    &bid,
+                                    &mut retry_run,
+                                    15,
+                                    4000,
+                                )
+                                .await;
+                            }
+
+                            if retry_run.status == lifecycle::BundleStatus::Landed {
+                                info!("Retry SUCCEEDED for run #{}", run_num);
+                                retry_run.recovery = Some(format!(
+                                    "Original failed with '{}'. Retried with fresh blockhash and tip {} lamports. Landed.",
+                                    run.error_reason.as_deref().unwrap_or("unknown"),
+                                    retry_tip
+                                ));
+                                // Log the retry as a separate entry
+                                lifecycle::log_run(&retry_run);
+                            } else {
+                                warn!("Retry also failed for run #{}: {}", run_num, retry_run.status);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Retry submission error for run #{}: {}", run_num, e);
+                        }
+                    }
+                }
+
+                // Log the original run
                 lifecycle::log_run(&run);
 
                 info!(
-                    "Run #{}: status={} bundle_id={} sig={}",
-                    run.run_number, run.status, run.bundle_id, run.signature
+                    "Run #{}: status={} bundle_id={} sig={} slot={:?}",
+                    run.run_number, run.status, run.bundle_id, run.signature, run.landed_slot
                 );
+
+                // Print lifecycle deltas if available
+                if let (Some(p), Some(c)) = (run.processed_at, run.confirmed_at) {
+                    info!(
+                        "  processed->confirmed: {}ms",
+                        (c - p).num_milliseconds()
+                    );
+                }
+                if let (Some(c), Some(f)) = (run.confirmed_at, run.finalized_at) {
+                    info!(
+                        "  confirmed->finalized: {}ms",
+                        (f - c).num_milliseconds()
+                    );
+                }
             }
             Err(e) => {
                 error!("Run #{} failed to build/submit: {}", run_num, e);
 
-                // Log the failure
-                let fail_run = lifecycle::BundleRun {
-                    bundle_id: String::new(),
-                    signature: String::new(),
+                let mut fail_run = lifecycle::BundleRun::new(
+                    String::new(),
+                    String::new(),
                     tip_lamports,
-                    tip_account: String::new(),
-                    status: lifecycle::BundleStatus::Failed,
-                    submitted_at: chrono::Utc::now(),
-                    landed_at: None,
-                    error_reason: Some(format!("{:#}", e)),
-                    run_number: run_num,
-                };
+                    String::new(),
+                    lifecycle::BundleStatus::Failed,
+                    run_num,
+                );
+                fail_run.error_reason = Some(format!("{:#}", e));
+                fail_run.classify_failure(
+                    "build_error",
+                    "pre_submission",
+                    "Check wallet balance, RPC connectivity, and keypair validity",
+                );
                 lifecycle::log_run(&fail_run);
             }
         }
 
-        // Brief pause between bundles (reduce rate-limit pressure on Jito)
+        // Brief pause between bundles
         if run_num < total_runs {
             info!("Waiting 8s before next bundle...");
             tokio::time::sleep(tokio::time::Duration::from_secs(8)).await;
@@ -137,8 +270,88 @@ async fn main() -> Result<()> {
 
     info!("===============================================");
     info!("  All {} bundle runs complete!", total_runs);
-    info!("  See lifecycle_log.jsonl for full results.");
+    info!("  See lifecycle_log.jsonl and ../logs/ for results.");
     info!("===============================================");
+
+    Ok(())
+}
+
+/// Run the Yellowstone gRPC slot stream, updating shared state with each new slot.
+async fn run_slot_stream(
+    endpoint: String,
+    token: String,
+    state: Arc<SlotState>,
+) -> Result<()> {
+    use futures::{SinkExt, StreamExt};
+    use std::collections::HashMap;
+    use yellowstone_grpc_client::GeyserGrpcClient;
+    use yellowstone_grpc_proto::prelude::{
+        subscribe_update::UpdateOneof,
+        CommitmentLevel,
+        SubscribeRequest,
+        SubscribeRequestFilterSlots,
+        SubscribeRequestPing,
+    };
+
+    info!("Connecting to Yellowstone at {}", endpoint);
+
+    let tls_config = tonic::transport::ClientTlsConfig::new().with_webpki_roots();
+
+    let mut client = GeyserGrpcClient::build_from_shared(endpoint)?
+        .x_token(Some(token))?
+        .tls_config(tls_config)?
+        .connect()
+        .await?;
+
+    info!("Connected to Yellowstone gRPC");
+
+    let mut slots_filter = HashMap::new();
+    slots_filter.insert(
+        "client".to_string(),
+        SubscribeRequestFilterSlots {
+            filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
+        },
+    );
+
+    let request = SubscribeRequest {
+        slots: slots_filter,
+        commitment: Some(CommitmentLevel::Processed as i32),
+        ..Default::default()
+    };
+
+    let (mut sink, mut stream) = client.subscribe_with_request(Some(request)).await?;
+
+    info!("Yellowstone slot stream active");
+
+    while let Some(message) = stream.next().await {
+        match message {
+            Ok(msg) => match msg.update_oneof {
+                Some(UpdateOneof::Slot(slot_update)) => {
+                    let old = state.latest_slot.swap(slot_update.slot, Ordering::Relaxed);
+                    if slot_update.slot > old + 5 || old == 0 {
+                        // Log occasionally to avoid noise, but show we are actively streaming
+                        info!("Yellowstone slot: {} (status={:?})", slot_update.slot, slot_update.status);
+                    }
+                    state.slot_updated.notify_waiters();
+                }
+                Some(UpdateOneof::Ping(_)) => {
+                    let ping_request = SubscribeRequest {
+                        ping: Some(SubscribeRequestPing { id: 1 }),
+                        ..Default::default()
+                    };
+                    if let Err(e) = sink.send(ping_request).await {
+                        warn!("Failed to send Yellowstone ping reply: {}", e);
+                    }
+                }
+                _ => {}
+            },
+            Err(e) => {
+                error!("Yellowstone stream error: {}", e);
+                break;
+            }
+        }
+    }
 
     Ok(())
 }

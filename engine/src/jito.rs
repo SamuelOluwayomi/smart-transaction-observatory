@@ -123,17 +123,21 @@ pub async fn build_and_submit_bundle(
                         error!("  sim log: {}", log);
                     }
                 }
-                return Ok(BundleRun {
-                    bundle_id: String::new(),
-                    signature: sim_tx.signatures[0].to_string(),
+                let mut fail_run = BundleRun::new(
+                    String::new(),
+                    sim_tx.signatures[0].to_string(),
                     tip_lamports,
-                    tip_account: tip_account_str.to_string(),
-                    status: BundleStatus::Failed,
-                    submitted_at: Utc::now(),
-                    landed_at: None,
-                    error_reason: Some(format!("Simulation failed: {:?}", err)),
+                    tip_account_str.to_string(),
+                    BundleStatus::Failed,
                     run_number,
-                });
+                );
+                fail_run.error_reason = Some(format!("Simulation failed: {:?}", err));
+                fail_run.classify_failure(
+                    "simulation_failure",
+                    "pre_submission",
+                    "Check instruction logic, account balances, and compute budget",
+                );
+                return Ok(fail_run);
             }
             info!("Solana simulation OK ({} CUs used)", sim_result.value.units_consumed.unwrap_or(0));
         }
@@ -215,17 +219,21 @@ pub async fn build_and_submit_bundle(
             last_error_msg = msg.to_string();
             error!("Transaction rejected by Jito: {}", last_error_msg);
 
-            return Ok(BundleRun {
-                bundle_id: bundle_id_header.unwrap_or_default(),
+            let mut fail_run = BundleRun::new(
+                bundle_id_header.unwrap_or_default(),
                 signature,
                 tip_lamports,
-                tip_account: tip_account_str.to_string(),
-                status: BundleStatus::Invalid,
-                submitted_at: Utc::now(),
-                landed_at: None,
-                error_reason: Some(last_error_msg),
+                tip_account_str.to_string(),
+                BundleStatus::Invalid,
                 run_number,
-            });
+            );
+            fail_run.error_reason = Some(last_error_msg);
+            fail_run.classify_failure(
+                "jito_rejection",
+                "submission",
+                "Transaction rejected by Jito block engine",
+            );
+            return Ok(fail_run);
         }
 
         // Success -- for sendTransaction, result is the tx signature (like Solana RPC)
@@ -243,17 +251,21 @@ pub async fn build_and_submit_bundle(
 
     if !submitted {
         error!("Transaction submission failed after {} retries: {}", max_retries, last_error_msg);
-        return Ok(BundleRun {
-            bundle_id: String::new(),
+        let mut fail_run = BundleRun::new(
+            String::new(),
             signature,
             tip_lamports,
-            tip_account: tip_account_str.to_string(),
-            status: BundleStatus::Invalid,
-            submitted_at: Utc::now(),
-            landed_at: None,
-            error_reason: Some(format!("Rate limited after {} retries: {}", max_retries, last_error_msg)),
+            tip_account_str.to_string(),
+            BundleStatus::Invalid,
             run_number,
-        });
+        );
+        fail_run.error_reason = Some(format!("Rate limited after {} retries: {}", max_retries, last_error_msg));
+        fail_run.classify_failure(
+            "rate_limit_exhausted",
+            "submission",
+            "Increase backoff delay or reduce submission frequency",
+        );
+        return Ok(fail_run);
     }
 
     // For sendTransaction: result is the tx signature, bundle_id is from header
@@ -266,17 +278,14 @@ pub async fn build_and_submit_bundle(
 
     info!("Bundle ID: {}", bundle_id);
 
-    Ok(BundleRun {
+    Ok(BundleRun::new(
         bundle_id,
         signature,
         tip_lamports,
-        tip_account: tip_account_str.to_string(),
-        status: BundleStatus::Submitted,
-        submitted_at: Utc::now(),
-        landed_at: None,
-        error_reason: None,
+        tip_account_str.to_string(),
+        BundleStatus::Submitted,
         run_number,
-    })
+    ))
 }
 
 /// Fetch the dynamic tip floor based on Jito's Tip Floor API.
