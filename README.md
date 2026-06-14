@@ -4,6 +4,14 @@ A Solana infrastructure project for the Superteam Nigeria **Advanced Infrastruct
 
 The observatory is a full-stack transaction operations system. It streams live Solana network state, builds and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle, and utilizes an autonomous AI agent to make tip and retry decisions based on network risk.
 
+## Live Demo & Walkthrough
+
+Check out the interactive dashboard, execution logs, and landing flow in action:
+
+- **Demo Video & Status Update**: [https://x.com/The_devsam/status/2065806306946981923?s=20](https://x.com/The_devsam/status/2065806306946981923?s=20)
+
+---
+
 ## Current Status & Bounty Features
 
 - **Yellowstone gRPC Integration & Concurrency Design**:
@@ -17,11 +25,38 @@ The observatory is a full-stack transaction operations system. It streams live S
 - **Failure Classification**: Categorizes errors (e.g., `rate_limit_exhausted`, `jito_rejection`, `blockhash_expired`) and provides clear recovery steps.
 - **Verifiable Evidence**: Generates a judge-ready Markdown export with run links, slots, commitment deltas, and AI decisions.
 
+---
+
 ## Architecture
 
 Please see the [Architecture Document](ARCHITECTURE.md) for a detailed breakdown of the system components.
 
 _Note for Bounty Submission: The contents of `ARCHITECTURE.md` should be copied to a public Notion or Google Doc and linked here to fully satisfy the "publicly hosted architecture document" requirement._
+
+---
+
+## Testing Modes (Local vs Daemon)
+
+The project supports two testing workflows for developers:
+
+### Mode A: Web-Only Testing (Local)
+
+If you want to test the frontend UI buttons, inspect the layouts, or interact with the AI chat model:
+
+1. Run the Next.js server locally.
+2. Click **Submit Bundle** directly on the dashboard.
+3. The server-side API handler in Node/TS (`lib/observatory.ts`) will build and submit the transaction via Jito's HTTP RPC, and confirm landing using an RPC Polling Fallback loop (`getSignatureStatuses`).
+
+### Mode B: Full Infrastructure Daemon (Rust Engine)
+
+To run the full 12-run cycle, verify Yellowstone gRPC stream connectivity, and log the final required lifecycle data:
+
+1. Run `cargo run` inside the `engine/` directory.
+2. The Rust daemon maintains a persistent Yellowstone stream connection to catch slot updates.
+3. Transactions are signed and submitted as Jito bundles, and their landing is verified using the Yellowstone gRPC stream (falling back to RPC on stream limits).
+4. The dashboard UI will read from the generated logs and dynamically refresh the tables in real-time.
+
+---
 
 ## Bounty Technical Questions
 
@@ -42,6 +77,8 @@ A blockhash remains valid for exactly 150 slots. By using a `Finalized` blockhas
 
 If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the _next_ available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
 
+---
+
 ## What To Use For Jito
 
 Use Jito's Block Engine HTTP JSON-RPC endpoints:
@@ -52,6 +89,8 @@ Use Jito's Block Engine HTTP JSON-RPC endpoints:
 - `https://bundles.jito.wtf/api/v1/bundles/tip_floor` for live tip floor data
 
 This project uses `sendTransaction` instead of raw `sendBundle`. Jito accepts the base64-encoded signed Solana transaction, automatically wraps it in a bundle, and returns the transaction signature in the JSON response. The `bundle_id` is captured from the `x-bundle-id` response header.
+
+---
 
 ## Running The Engine
 
@@ -103,6 +142,8 @@ YELLOWSTONE_TOKEN=
 - `GET /api/observatory`: current Solana slot, wallet balance, Jito tip floor, multi-stage lifecycle log summary, and latest AI decision.
 - `POST /api/submit-bundle`: asks the Groq agent for a decision, submits a memo transaction through Jito when the action is not `hold`, polls multi-stage confirmation status, and appends the result to the log.
 - `GET /api/evidence`: exports a Markdown evidence report for bounty submission.
+
+---
 
 ## Bounty Checklist
 
