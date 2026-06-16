@@ -22,7 +22,11 @@ async fn main() -> Result<()> {
         .with_env_filter("info")
         .init();
 
-    info!("Starting Smart Transaction Observatory Engine...");
+    if std::env::var("FAIL_TEST").as_deref() == Ok("expired-hash") {
+        std::env::set_var("FORCE_EXPIRED_HASH", "true");
+    }
+
+    info!("Starting Sentry Engine...");
 
     let config = config::Config::from_env()?;
     info!("Config loaded.");
@@ -41,15 +45,19 @@ async fn main() -> Result<()> {
         anyhow::bail!("Wallet balance too low for bundle submissions. Need at least 50,000 lamports.");
     }
 
-    // Clean stale lifecycle logs from previous runs
-    let log_path = std::path::Path::new("lifecycle_log.jsonl");
-    if log_path.exists() {
-        info!("Removing stale lifecycle_log.jsonl from previous run");
-        std::fs::remove_file(log_path).ok();
-    }
-    let project_log = std::path::Path::new("../logs/lifecycle_log.jsonl");
-    if project_log.exists() {
-        std::fs::remove_file(project_log).ok();
+    // Clean stale lifecycle logs from previous runs (only on fresh non-failure-test runs)
+    if std::env::var("FAIL_TEST").is_err() {
+        let log_path_env = std::env::var("LIFECYCLE_LOG_PATH").unwrap_or_else(|_| "lifecycle_log.jsonl".to_string());
+        let log_path = std::path::Path::new(&log_path_env);
+        if log_path.exists() {
+            info!("Removing stale lifecycle_log.jsonl from previous run: {:?}", log_path);
+            std::fs::remove_file(log_path).ok();
+        }
+        let logs_dir_env = std::env::var("LOGS_DIR").unwrap_or_else(|_| "../logs".to_string());
+        let project_log = std::path::Path::new(&logs_dir_env).join("lifecycle_log.jsonl");
+        if project_log.exists() {
+            std::fs::remove_file(project_log).ok();
+        }
     }
 
     // Capture the initial slot from Solana RPC before we start
@@ -84,7 +92,10 @@ async fn main() -> Result<()> {
     info!("  Phase: Jito Bundle Submission");
     info!("===============================================");
 
-    let total_runs: u32 = 12; // 10 normal + 2 intentional failures
+    let total_runs: u32 = std::env::var("RUN_COUNT")
+        .ok()
+        .and_then(|val| val.parse().ok())
+        .unwrap_or(12); // default to 10 normal + 2 failures
 
     for run_num in 1..=total_runs {
         info!("---------------------------------------------");
@@ -96,19 +107,22 @@ async fn main() -> Result<()> {
         info!("Current observed slot: {}", current_slot);
 
         // Determine tip and failure injection
-        let (tip_lamports, memo_text, intentional_failure) = match run_num {
-            11 => {
-                info!("INTENTIONAL FAILURE: tip = 0 lamports (below minimum)");
-                (0u64, "Smart TX Observatory | FAIL TEST: zero tip", true)
-            }
-            12 => {
-                info!("INTENTIONAL FAILURE: tip = 1 lamport (below floor)");
-                (1u64, "Smart TX Observatory | FAIL TEST: micro tip", true)
-            }
-            _ => {
-                let tip = jito::get_dynamic_tip(&config.solana_rpc_url).await?;
-                (tip, "Smart TX Observatory | bounty demo", false)
-            }
+        let (tip_lamports, memo_text, intentional_failure) = if std::env::var("FAIL_TEST").as_deref() == Ok("zero-tip") {
+            info!("FAIL TEST MODE: Forcing tip = 0 lamports (zero-tip failure)");
+            (0u64, "Sentry | FAIL TEST: zero tip", true)
+        } else if std::env::var("FAIL_TEST").as_deref() == Ok("expired-hash") {
+            info!("FAIL TEST MODE: Forcing expired blockhash (expired-hash failure)");
+            let tip = jito::get_dynamic_tip(&config.solana_rpc_url).await.unwrap_or(30_000);
+            (tip, "Sentry | FAIL TEST: expired blockhash", true)
+        } else if total_runs >= 2 && run_num == total_runs - 1 {
+            info!("INTENTIONAL FAILURE: tip = 0 lamports (below minimum)");
+            (0u64, "Sentry | FAIL TEST: zero tip", true)
+        } else if total_runs >= 2 && run_num == total_runs {
+            info!("INTENTIONAL FAILURE: tip = 1 lamport (below floor)");
+            (1u64, "Sentry | FAIL TEST: micro tip", true)
+        } else {
+            let tip = jito::get_dynamic_tip(&config.solana_rpc_url).await?;
+            (tip, "Sentry | bounty demo", false)
         };
 
         // Submit the bundle
@@ -146,18 +160,30 @@ async fn main() -> Result<()> {
                 // Classify intentional failures that might have "succeeded" anyway
                 if intentional_failure && run.status != lifecycle::BundleStatus::Landed {
                     if run.failure_type.is_none() {
-                        match run_num {
-                            11 => run.classify_failure(
+                        if std::env::var("FAIL_TEST").as_deref() == Ok("zero-tip") {
+                            run.classify_failure(
+                                "zero_tip",
+                                "tip_calculation",
+                                "Tip was 0 lamports; Jito requires a nonzero tip to include bundles (fault injection test)",
+                            );
+                        } else if std::env::var("FAIL_TEST").as_deref() == Ok("expired-hash") {
+                            run.classify_failure(
+                                "blockhash_expired",
+                                "pre_submission",
+                                "Forced expired blockhash (fault injection test)",
+                            );
+                        } else if total_runs >= 2 && run_num == total_runs - 1 {
+                            run.classify_failure(
                                 "zero_tip",
                                 "tip_calculation",
                                 "Tip was 0 lamports; Jito requires a nonzero tip to include bundles",
-                            ),
-                            12 => run.classify_failure(
+                            );
+                        } else if total_runs >= 2 && run_num == total_runs {
+                            run.classify_failure(
                                 "tip_below_floor",
                                 "tip_calculation",
                                 "Tip was 1 lamport; well below the Jito tip floor for auction inclusion",
-                            ),
-                            _ => {}
+                            );
                         }
                     }
                 }

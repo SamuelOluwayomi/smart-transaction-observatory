@@ -1,10 +1,10 @@
-# Smart Transaction Observatory Architecture
+# Sentry Architecture
 
 _Note for Bounty Submission: This document should be copied to a public Notion or Google Doc and linked in the README to satisfy the external architecture document requirement._
 
 ## System Overview
 
-The Smart Transaction Observatory is a full-stack transaction operations system designed to submit Jito bundles with high reliability, track their multi-stage commitment lifecycle, and employ an autonomous AI agent to make operational tip and retry decisions.
+Sentry is a full-stack transaction operations system designed to submit Jito bundles with high reliability, track their multi-stage commitment lifecycle, and employ an autonomous AI agent to make operational tip and retry decisions.
 
 It consists of three primary components:
 

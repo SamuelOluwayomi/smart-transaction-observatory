@@ -106,9 +106,14 @@ pub async fn build_and_submit_bundle(
     );
 
     // 3. Simulate via Solana RPC (validates instruction logic)
-    let sim_blockhash = rpc_client
-        .get_latest_blockhash()
-        .context("fetch blockhash for simulation")?;
+    let sim_blockhash = if std::env::var("FORCE_EXPIRED_HASH").is_ok() {
+        info!("FORCE_EXPIRED_HASH is active! Using a default (expired) blockhash.");
+        solana_sdk::hash::Hash::default()
+    } else {
+        rpc_client
+            .get_latest_blockhash()
+            .context("fetch blockhash for simulation")?
+    };
 
     let sim_message = Message::new(&[memo_ix.clone(), tip_ix.clone()], Some(&keypair.pubkey()));
     let sim_tx = Transaction::new(&[keypair], sim_message, sim_blockhash);
@@ -131,11 +136,19 @@ pub async fn build_and_submit_bundle(
                     run_number,
                 );
                 fail_run.error_reason = Some(format!("Simulation failed: {:?}", err));
-                fail_run.classify_failure(
-                    "simulation_failure",
-                    "pre_submission",
-                    "Check instruction logic, account balances, and compute budget",
-                );
+                if std::env::var("FORCE_EXPIRED_HASH").is_ok() {
+                    fail_run.classify_failure(
+                        "blockhash_expired",
+                        "pre_submission",
+                        "Forced expired blockhash (fault injection test)",
+                    );
+                } else {
+                    fail_run.classify_failure(
+                        "simulation_failure",
+                        "pre_submission",
+                        "Check instruction logic, account balances, and compute budget",
+                    );
+                }
                 return Ok(fail_run);
             }
             info!("Solana simulation OK ({} CUs used)", sim_result.value.units_consumed.unwrap_or(0));
@@ -146,9 +159,13 @@ pub async fn build_and_submit_bundle(
     }
 
     // 4. Fetch FRESH blockhash, build final tx, serialize
-    let recent_blockhash = rpc_client
-        .get_latest_blockhash()
-        .context("fetch fresh blockhash for submission")?;
+    let recent_blockhash = if std::env::var("FORCE_EXPIRED_HASH").is_ok() {
+        solana_sdk::hash::Hash::default()
+    } else {
+        rpc_client
+            .get_latest_blockhash()
+            .context("fetch fresh blockhash for submission")?
+    };
 
     let message = Message::new(&[memo_ix, tip_ix], Some(&keypair.pubkey()));
     let tx = Transaction::new(&[keypair], message, recent_blockhash);

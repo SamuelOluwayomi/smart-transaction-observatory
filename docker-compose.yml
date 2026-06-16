@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - LIFECYCLE_LOG_PATH=/app/shared/lifecycle_log.jsonl
+      - LOGS_DIR=/app/shared/logs
+    volumes:
+      - sentry-data:/app/shared
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["npx", "tsx", "agent/src/index.ts"]
+    env_file:
+      - .env
+    environment:
+      - DAEMON=true
+      - DAEMON_INTERVAL=10000
+      - LIFECYCLE_LOG_PATH=/app/shared/lifecycle_log.jsonl
+      - AGENT_DECISIONS_PATH=/app/shared/agent_decisions.jsonl
+    volumes:
+      - sentry-data:/app/shared
+    restart: unless-stopped
+    depends_on:
+      - engine
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - LIFECYCLE_LOG_PATH=/app/shared/lifecycle_log.jsonl
+      - AGENT_DECISIONS_PATH=/app/shared/agent_decisions.jsonl
+      - LOGS_DIR=/app/shared/logs
+    volumes:
+      - sentry-data:/app/shared
+    restart: unless-stopped
+    depends_on:
+      - agent
+
+volumes:
+  sentry-data:

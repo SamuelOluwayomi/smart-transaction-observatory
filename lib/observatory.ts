@@ -129,8 +129,8 @@ const FALLBACK_TIP_ACCOUNTS = [
   "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
 ];
 
-const lifecyclePath = path.join(process.cwd(), "engine", "lifecycle_log.jsonl");
-const decisionsPath = path.join(process.cwd(), "agent_decisions.jsonl");
+const lifecyclePath = process.env.LIFECYCLE_LOG_PATH || path.join(process.cwd(), "engine", "lifecycle_log.jsonl");
+const decisionsPath = process.env.AGENT_DECISIONS_PATH || path.join(process.cwd(), "agent_decisions.jsonl");
 
 function parseEnvFile(filePath: string): Record<string, string> {
   if (!existsSync(filePath)) {

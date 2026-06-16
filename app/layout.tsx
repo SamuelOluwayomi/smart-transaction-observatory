@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Transaction Observatory",
+  title: "Sentry: Smart Transaction Stack",
   description:
     "A Solana smart transaction stack for Jito bundle submission, lifecycle tracking, and AI-assisted operations.",
   icons: {

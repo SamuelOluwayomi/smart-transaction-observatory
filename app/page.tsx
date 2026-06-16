@@ -808,7 +808,7 @@ export default function Home() {
             <span className="grid h-8 w-8 place-items-center border-2 border-foreground bg-foreground text-background shadow-brutal-sm">
               <Activity size={18} weight="bold" />
             </span>
-            Smart TX Observatory
+            Sentry
           </a>
           <nav className="hidden items-center gap-8 font-mono text-[11px] font-bold uppercase md:flex">
             <a href="#lifecycle">Lifecycle</a>

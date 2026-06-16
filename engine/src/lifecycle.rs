@@ -102,7 +102,14 @@ pub fn log_run(run: &BundleRun) {
     let json = serde_json::to_string(run).expect("serialize BundleRun");
 
     // Write to engine-local log
-    let path = Path::new(LOG_FILE);
+    let log_file_env = std::env::var("LIFECYCLE_LOG_PATH").unwrap_or_else(|_| LOG_FILE.to_string());
+    let path = Path::new(&log_file_env);
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+
     match OpenOptions::new().create(true).append(true).open(path) {
         Ok(mut file) => {
             if let Err(e) = writeln!(file, "{}", json) {
@@ -117,7 +124,8 @@ pub fn log_run(run: &BundleRun) {
     }
 
     // Also write to project-level logs/ directory
-    let logs_dir = Path::new(LOGS_DIR);
+    let logs_dir_env = std::env::var("LOGS_DIR").unwrap_or_else(|_| LOGS_DIR.to_string());
+    let logs_dir = Path::new(&logs_dir_env);
     if let Err(e) = std::fs::create_dir_all(logs_dir) {
         warn!("Could not create logs directory: {}", e);
         return;

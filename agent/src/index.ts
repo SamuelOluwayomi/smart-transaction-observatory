@@ -100,7 +100,7 @@ function env(key: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 function readLifecycleLog(): BundleRun[] {
-  const logPath = join(__dirname, "..", "..", "engine", "lifecycle_log.jsonl");
+  const logPath = env("LIFECYCLE_LOG_PATH") ?? join(__dirname, "..", "..", "engine", "lifecycle_log.jsonl");
   if (!existsSync(logPath)) return [];
   return readFileSync(logPath, "utf8")
     .split(/\r?\n/)
@@ -447,11 +447,7 @@ async function makeGroqDecision(
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
-  console.log("========================================");
-  console.log("  Smart TX Observatory -- AI Agent");
-  console.log("========================================\n");
-
+async function runAgentCycle() {
   // 1. Read state
   const runs = readLifecycleLog();
   console.log(`[agent] Loaded ${runs.length} lifecycle log entries`);
@@ -501,14 +497,37 @@ async function main() {
   }
 
   // 5. Write decision
-  const decisionsPath = join(__dirname, "..", "..", "agent_decisions.jsonl");
+  const decisionsPath = env("AGENT_DECISIONS_PATH") ?? join(__dirname, "..", "..", "agent_decisions.jsonl");
   mkdirSync(dirname(decisionsPath), { recursive: true });
   appendFileSync(decisionsPath, JSON.stringify(finalDecision) + "\n", "utf8");
-  console.log(`\n[agent] Decision written to agent_decisions.jsonl`);
+  console.log(`\n[agent] Decision written to ${decisionsPath}`);
   console.log(`[agent] Decision ID: ${finalDecision.id}`);
-  console.log("\n========================================");
-  console.log("  Agent run complete.");
+}
+
+async function main() {
   console.log("========================================");
+  console.log("  Smart TX Observatory -- AI Agent");
+  console.log("========================================\n");
+
+  const isDaemon = env("DAEMON") === "true";
+  if (isDaemon) {
+    const interval = Number(env("DAEMON_INTERVAL") ?? 10000);
+    console.log(`[agent] Running in DAEMON mode (polling every ${interval}ms)`);
+    while (true) {
+      try {
+        await runAgentCycle();
+      } catch (err) {
+        console.error("[agent] Error in cycle:", err);
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval));
+      console.log("\n[agent] Starting next cycle...");
+    }
+  } else {
+    await runAgentCycle();
+    console.log("\n========================================");
+    console.log("  Agent run complete.");
+    console.log("========================================");
+  }
 }
 
 main().catch((err) => {

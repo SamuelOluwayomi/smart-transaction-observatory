@@ -1,8 +1,8 @@
-# Smart Transaction Observatory
+# Sentry: Smart Transaction Stack
 
 A Solana infrastructure project for the Superteam Nigeria **Advanced Infrastructure Challenge: Build a Smart Transaction Stack** bounty.
 
-The observatory is a full-stack transaction operations system. It streams live Solana network state, builds and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle, and utilizes an autonomous AI agent to make tip and retry decisions based on network risk.
+Sentry is a full-stack transaction operations system. It streams live Solana network state, builds and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle, and utilizes an autonomous AI agent to make tip and retry decisions based on network risk.
 
 ## Live Demo & Walkthrough
 
@@ -89,6 +89,98 @@ Use Jito's Block Engine HTTP JSON-RPC endpoints:
 - `https://bundles.jito.wtf/api/v1/bundles/tip_floor` for live tip floor data
 
 This project uses `sendTransaction` instead of raw `sendBundle`. Jito accepts the base64-encoded signed Solana transaction, automatically wraps it in a bundle, and returns the transaction signature in the JSON response. The `bundle_id` is captured from the `x-bundle-id` response header.
+
+---
+
+## 🚀 Command-Line Interface (`sentry`)
+
+The project includes a unified, installable CLI binary to orchestrate and inspect the entire Sentry Smart Transaction Stack. It supports two modes:
+
+- **Interactive REPL** — run `sentry` with no arguments to launch a persistent operator console with a `sentry>` prompt
+- **One-shot** — pass a command directly as an argument (e.g. `sentry status`) for scripting or Docker use
+
+### Installation
+
+```bash
+npm link
+```
+
+*Requires Node.js >= 18.*
+
+### Interactive REPL Mode
+
+Launch the persistent console:
+
+```bash
+sentry
+```
+
+You'll land on a `sentry>` prompt with the full command menu displayed. The session stays open until you type `exit` or `quit`:
+
+```
+sentry> status          # snapshot of pipeline state
+sentry> analyze         # deterministic stats + AI insights
+sentry> evidence        # generate judge-ready evidence.md
+sentry> ask "why did run 6 fail?"
+sentry> verify <sig>    # look up a tx on-chain
+sentry> fail-test zero-tip
+sentry> engine          # starts Rust engine (blocks until Ctrl+C)
+sentry> run --count 5   # runs all services (blocks until Ctrl+C)
+sentry> help            # redisplay menu
+sentry> exit
+```
+
+> **Note:** `engine`, `agent`, `dashboard`, `run`, and `docker-up` hand stdio over to the child process and block the prompt until you press Ctrl+C. The REPL resumes automatically once the child exits.
+
+### One-Shot Mode
+
+Pass a command directly — identical output, no interactive prompt:
+
+```bash
+sentry status
+sentry analyze
+sentry evidence
+sentry ask "What is my current tip floor?"
+sentry verify <signature>
+sentry fail-test zero-tip
+sentry fail-test expired-hash
+sentry run --count 10
+sentry engine
+sentry agent
+sentry dashboard
+sentry docker-up
+```
+
+Alternatively, without global installation:
+
+```bash
+npm run cli status
+```
+
+
+
+---
+
+## 🐳 Docker Orchestration
+
+The stack is fully containerized using Docker and Docker Compose. This allows you to compile the Rust Engine, launch the AI Agent Daemon, and start the Next.js Web Console with a single command.
+
+A shared Docker volume is used to sync logs and decisions dynamically between the containers, ensuring the services remain decoupled.
+
+To run the containerized stack:
+
+1. Create a `.env` file at the root of the project with your RPC, Jito, and Groq credentials.
+2. Launch the services:
+
+```bash
+# Via CLI
+sentry docker-up
+
+# Or natively via Docker Compose
+docker compose up --build
+```
+
+The Next.js dashboard will be exposed at `http://localhost:3000`.
 
 ---
 

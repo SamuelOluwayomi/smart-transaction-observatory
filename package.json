@@ -1,5 +1,8 @@
 {
-  "name": "smart-tx-observatory",
+  "name": "sentry-protocol",
+  "bin": {
+    "sentry": "./cli.js"
+  },
   "scripts": {
     "build": "next build",
     "ci": "npm run build && npm run lint && npm run format:check",
@@ -7,7 +10,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint",
-    "start": "next start"
+    "start": "next start",
+    "cli": "node cli.js"
   },
   "description": "Next.js, Tailwind, @solana/react-hooks",
   "keywords": [
