@@ -92,7 +92,7 @@ This project uses `sendTransaction` instead of raw `sendBundle`. Jito accepts th
 
 ---
 
-## 🚀 Command-Line Interface (`sentry`)
+## Command-Line Interface (`sentry`)
 
 The project includes a unified, installable CLI binary to orchestrate and inspect the entire Sentry Smart Transaction Stack. It supports two modes:
 
@@ -157,11 +157,9 @@ Alternatively, without global installation:
 npm run cli status
 ```
 
-
-
 ---
 
-## 🐳 Docker Orchestration
+## Docker Orchestration
 
 The stack is fully containerized using Docker and Docker Compose. This allows you to compile the Rust Engine, launch the AI Agent Daemon, and start the Next.js Web Console with a single command.
 
