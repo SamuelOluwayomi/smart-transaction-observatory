@@ -806,11 +806,8 @@ export default function Home() {
 
       <header className="sticky top-0 z-30 border-b-2 border-foreground bg-background/82 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a className="flex items-center gap-3 font-mono text-sm font-black uppercase tracking-normal">
-            <span className="grid h-8 w-8 place-items-center border-2 border-foreground bg-foreground text-background shadow-brutal-sm">
-              <Activity size={18} weight="bold" />
-            </span>
-            Sentry
+          <a href="/" className="flex items-center gap-3">
+            <img src="/Sentry.png" alt="Sentry Logo" className="h-8 w-auto invert drop-shadow-sm transition-transform hover:scale-105" />
           </a>
           <nav className="hidden items-center gap-8 font-mono text-[11px] font-bold uppercase md:flex">
             <a href="#lifecycle">Lifecycle</a>

@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   description:
     "A Solana smart transaction stack for Jito bundle submission, lifecycle tracking, and AI-assisted operations.",
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/favicon/favicon.ico",
+    shortcut: "/favicon/favicon-16x16.png",
+    apple: "/favicon/apple-touch-icon.png",
   },
 };
 

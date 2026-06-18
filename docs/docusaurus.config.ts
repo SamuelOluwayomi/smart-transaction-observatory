@@ -74,7 +74,8 @@ const config: Config = {
       title: 'Sentry Protocol',
       logo: {
         alt: 'Sentry Logo',
-        src: 'img/logo.svg',
+        src: 'img/Sentry.png',
+        className: 'custom-logo',
       },
       items: [
         {
