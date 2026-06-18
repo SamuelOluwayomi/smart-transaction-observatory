@@ -129,8 +129,8 @@ const FALLBACK_TIP_ACCOUNTS = [
   "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
 ];
 
-const lifecyclePath = process.env.LIFECYCLE_LOG_PATH || path.join(process.cwd(), "engine", "lifecycle_log.jsonl");
-const decisionsPath = process.env.AGENT_DECISIONS_PATH || path.join(process.cwd(), "agent_decisions.jsonl");
+const lifecyclePath = process.env.LIFECYCLE_LOG_PATH || path.join(/*turbopackIgnore: true*/ process.cwd(), "engine", "lifecycle_log.jsonl");
+const decisionsPath = process.env.AGENT_DECISIONS_PATH || path.join(/*turbopackIgnore: true*/ process.cwd(), "agent_decisions.jsonl");
 
 function parseEnvFile(filePath: string): Record<string, string> {
   if (!existsSync(filePath)) {
@@ -155,8 +155,8 @@ function parseEnvFile(filePath: string): Record<string, string> {
   );
 }
 
-const rootEnv = parseEnvFile(path.join(process.cwd(), ".env"));
-const engineEnv = parseEnvFile(path.join(process.cwd(), "engine", ".env"));
+const rootEnv = parseEnvFile(path.join(/*turbopackIgnore: true*/ process.cwd(), ".env"));
+const engineEnv = parseEnvFile(path.join(/*turbopackIgnore: true*/ process.cwd(), "engine", ".env"));
 
 function env(name: string) {
   return process.env[name] ?? rootEnv[name] ?? engineEnv[name];
