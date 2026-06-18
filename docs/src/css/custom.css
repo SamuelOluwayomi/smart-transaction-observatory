@@ -33,3 +33,17 @@
 html[data-theme='light'] .custom-logo {
   filter: invert(1);
 }
+
+/* Override Docusaurus default 32px logo constraint */
+.navbar__logo {
+  height: 3rem !important;
+  margin-right: 0.5rem;
+}
+
+.navbar__logo img,
+.custom-logo {
+  height: 3rem !important;
+  max-height: 3rem !important;
+  width: auto !important;
+  object-fit: contain !important;
+}

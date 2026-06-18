@@ -71,9 +71,9 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Sentry Protocol',
+      title: '',
       logo: {
-        alt: 'Sentry Logo',
+        alt: 'Sentry Protocol',
         src: 'img/Sentry.png',
         className: 'custom-logo',
       },
