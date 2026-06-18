@@ -817,7 +817,7 @@ export default function Home() {
             <a href="#agent">Agent</a>
             <a href="#evidence">Evidence</a>
             <a href="#stack">Stack</a>
-            <a href="/docs" className="text-red-600 font-black">Docs</a>
+            <a href="https://sentry-doc.vercel.app/" target="_blank" rel="noopener noreferrer" className="text-red-600 font-black">Docs</a>
           </nav>
           <div className="flex items-center gap-2">
             <span className="metal hidden border-2 border-foreground px-3 py-2 font-mono text-[11px] font-bold uppercase sm:inline-flex">
