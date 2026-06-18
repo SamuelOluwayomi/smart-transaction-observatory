@@ -98,6 +98,7 @@ function showHelp() {
   console.log(`  ${colors.green}engine${colors.reset}                   Compile & run the Rust bundle submission engine`);
   console.log(`  ${colors.green}agent${colors.reset}                    Run the AI agent reasoning daemon`);
   console.log(`  ${colors.green}dashboard${colors.reset}                Start Next.js dashboard console`);
+  console.log(`  ${colors.green}docs${colors.reset}                     Start Docusaurus documentation site`);
   console.log("\nDocker Integration Commands:");
   console.log(`  ${colors.green}docker-up${colors.reset}                Spin up the complete containerized stack via Docker Compose`);
   console.log("");
@@ -110,7 +111,7 @@ function showHelp() {
 // 1. Status Command
 async function runStatus() {
   printHeader();
-  
+
   // Resolve paths
   const logPath = process.env.LIFECYCLE_LOG_PATH || path.join(projectRoot, "engine", "lifecycle_log.jsonl");
   const decisionsPath = process.env.AGENT_DECISIONS_PATH || path.join(projectRoot, "agent_decisions.jsonl");
@@ -143,7 +144,7 @@ async function runStatus() {
           const { Keypair } = require("@solana/web3.js");
           const walletBytes = Uint8Array.from(JSON.parse(process.env.WALLET_PRIVATE_KEY));
           pubkey = Keypair.fromSecretKey(walletBytes).publicKey.toBase58();
-        } catch {}
+        } catch { }
 
         if (pubkey !== "Unknown") {
           const balResp = await fetch(process.env.SOLANA_RPC_URL, {
@@ -156,7 +157,7 @@ async function runStatus() {
           console.log(`- Wallet: ${colors.cyan}${pubkey}${colors.reset}`);
           console.log(`- Wallet Balance: ${colors.green}${sol.toFixed(4)} SOL${colors.reset}\n`);
         }
-      } catch {}
+      } catch { }
     }
   }
 
@@ -175,13 +176,13 @@ async function runStatus() {
       console.log(`  -------------------------------------------------------------------------------------------------------------------`);
       console.log(`  Run | Status    | Tip (lamports) | Submit Slot | Landed Slot | Proc->Conf | Confirmation Source`);
       console.log(`  -------------------------------------------------------------------------------------------------------------------`);
-      
+
       runs.slice(-5).reverse().forEach(run => {
         const statusColor = run.status === "Landed" ? colors.green : run.status === "Failed" || run.status === "Invalid" ? colors.red : colors.yellow;
         const procToConf = (run.processed_at && run.confirmed_at)
           ? `${new Date(run.confirmed_at).getTime() - new Date(run.processed_at).getTime()}ms`
           : "--";
-        
+
         console.log(`  ${String(run.run_number).padEnd(3)} | ${statusColor}${run.status.padEnd(9)}${colors.reset} | ${String(run.tip_lamports).padEnd(14)} | ${String(run.submit_slot ?? "--").padEnd(11)} | ${String(run.landed_slot ?? "--").padEnd(11)} | ${procToConf.padEnd(10)} | ${run.confirmation_source ?? "N/A"}`);
       });
       console.log(`  -------------------------------------------------------------------------------------------------------------------`);
@@ -316,7 +317,7 @@ function printStatsBlock(stats) {
   console.log(`Skipped Slot / Delayed Inclusion:   ${colors.yellow}${stats.skippedSlotImpactPct}% of runs took > 2 slots to land${colors.reset}`);
   console.log(`----------------------------------------------------------------------`);
   console.log(`Confirmation Sources:               Yellowstone: ${stats.yellowstoneCount} | RPC Fallback: ${stats.fallbackCount}`);
-  
+
   const failTypes = Object.entries(stats.failureCounts);
   if (failTypes.length > 0) {
     console.log(`Failure Categories Observed:`);
@@ -332,7 +333,7 @@ function printStatsBlock(stats) {
 // 2. Evidence Command
 function runEvidence() {
   printHeader();
-  
+
   const logPath = process.env.LIFECYCLE_LOG_PATH || path.join(projectRoot, "engine", "lifecycle_log.jsonl");
   const decisionsPath = process.env.AGENT_DECISIONS_PATH || path.join(projectRoot, "agent_decisions.jsonl");
   const exportPath = path.join(process.cwd(), "evidence.md");
@@ -349,9 +350,9 @@ function runEvidence() {
 
   const decisions = fs.existsSync(decisionsPath)
     ? fs.readFileSync(decisionsPath, "utf8")
-        .split(/\n/)
-        .filter(Boolean)
-        .map(line => JSON.parse(line))
+      .split(/\n/)
+      .filter(Boolean)
+      .map(line => JSON.parse(line))
     : [];
 
   const stats = calculateStats(runs);
@@ -369,7 +370,7 @@ This document serves as the judge-ready submission report for the **Sentry** tra
 
 ---
 
-## 📊 Executive Performance Summary
+## Executive Performance Summary
 
 - **Total Recorded runs**: ${stats.total}
 - **Landed (Success)**: ${stats.landedCount}
@@ -384,7 +385,7 @@ This document serves as the judge-ready submission report for the **Sentry** tra
 
 ---
 
-## 💡 Technical Bounty Questions
+## Technical Bounty Questions
 
 ### Q1: What does the delta between processed_at and confirmed_at tell you?
 
@@ -408,33 +409,33 @@ If the scheduled Jito leader skips their slot, that block is never produced, and
 
 ---
 
-## 📝 Multi-Stage Transaction Lifecycle Log
+## Multi-Stage Transaction Lifecycle Log
 
 Below is the verification table of all submissions in the lifecycle log:
 
 | Run | Status | Confirmation Source | Tip (lamports) | Submit Slot | Landed Slot | Slot Delta | Proc->Conf | Conf->Final | Signature | Failure Type | Recovery / Action |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
 ${runs.sort((a, b) => a.run_number - b.run_number).map(run => {
-  const sig = run.signature ? `[${run.signature.slice(0, 8)}...](https://solscan.io/tx/${run.signature})` : "";
-  const slotDelta = (run.submit_slot !== undefined && run.landed_slot !== undefined && run.submit_slot !== null && run.landed_slot !== null)
-    ? (run.landed_slot - run.submit_slot)
-    : "--";
-  const p2c = fmtDelta(run.processed_at, run.confirmed_at);
-  const c2f = fmtDelta(run.confirmed_at, run.finalized_at);
-  return `| ${run.run_number} | ${run.status} | ${run.confirmation_source ?? "--"} | ${run.tip_lamports} | ${run.submit_slot ?? "--"} | ${run.landed_slot ?? "--"} | ${slotDelta} | ${p2c} | ${c2f} | ${sig} | ${run.failure_type ?? "--"} | ${run.recovery ?? "--"} |`;
-}).join("\n")}
+    const sig = run.signature ? `[${run.signature.slice(0, 8)}...](https://solscan.io/tx/${run.signature})` : "";
+    const slotDelta = (run.submit_slot !== undefined && run.landed_slot !== undefined && run.submit_slot !== null && run.landed_slot !== null)
+      ? (run.landed_slot - run.submit_slot)
+      : "--";
+    const p2c = fmtDelta(run.processed_at, run.confirmed_at);
+    const c2f = fmtDelta(run.confirmed_at, run.finalized_at);
+    return `| ${run.run_number} | ${run.status} | ${run.confirmation_source ?? "--"} | ${run.tip_lamports} | ${run.submit_slot ?? "--"} | ${run.landed_slot ?? "--"} | ${slotDelta} | ${p2c} | ${c2f} | ${sig} | ${run.failure_type ?? "--"} | ${run.recovery ?? "--"} |`;
+  }).join("\n")}
 
 ---
 
-## 🤖 AI Agent Recommendation Log
+## AI Agent Recommendation Log
 
 Here are the details of the AI Agent's recommendation history:
 
 | Time | Model | Action | Recommended Tip (lamports) | Confidence | Observed Risk / Notes |
 | --- | --- | --- | ---: | ---: | --- |
 ${decisions.map(d => {
-  return `| ${d.created_at} | ${d.model} | ${d.action} | ${d.recommended_tip_lamports} | ${Math.round(d.confidence * 100)}% | ${d.reason.replace(/\|/g, "/")} |`;
-}).join("\n")}
+    return `| ${d.created_at} | ${d.model} | ${d.action} | ${d.recommended_tip_lamports} | ${Math.round(d.confidence * 100)}% | ${d.reason.replace(/\|/g, "/")} |`;
+  }).join("\n")}
 `;
 
   fs.writeFileSync(exportPath, markdownContent, "utf8");
@@ -499,7 +500,7 @@ function askGroq(systemPrompt, userPrompt, onChunk) {
               if (text) {
                 onChunk(text);
               }
-            } catch (e) {}
+            } catch (e) { }
           }
         }
       });
@@ -530,7 +531,7 @@ function compileContext() {
         .split(/\n/)
         .filter(Boolean)
         .map(line => JSON.parse(line));
-    } catch {}
+    } catch { }
   }
 
   let decisions = [];
@@ -540,7 +541,7 @@ function compileContext() {
         .split(/\n/)
         .filter(Boolean)
         .map(line => JSON.parse(line));
-    } catch {}
+    } catch { }
   }
 
   const sliceRuns = runs.slice(-10);
@@ -614,7 +615,7 @@ ${context.rawDecisions}`;
       }
 
       console.log(`\n${colors.magenta}AI Agent: ${colors.reset}`);
-      
+
       let responseText = "";
       try {
         const historyPrompt = `Here is the conversation history so far:\n${JSON.stringify(conversationHistory, null, 2)}\n\nUser Question: ${trimmed}`;
@@ -664,7 +665,7 @@ async function runAnalyze() {
   }
 
   console.log(`${colors.magenta}${colors.bold}AI Systems Operator Insights (Qualitative Summary):${colors.reset}`);
-  
+
   const systemPrompt = `You are a Senior Solana Performance Engineer auditing the Sentry Smart Transaction Stack.
 You will receive the deterministic statistics calculated from the pipeline's lifecycle logs.
 Provide a single, concise, professional paragraph explaining the operational implications of these metrics.
@@ -699,10 +700,10 @@ function runFailTest(type) {
     return;
   }
   console.log(`${colors.cyan}Injecting deliberate failure run: ${colors.bold}${type}${colors.reset}\n`);
-  
+
   process.env.FAIL_TEST = type;
   process.env.RUN_COUNT = "1";
-  
+
   console.log(`${colors.dim}Running engine with FAIL_TEST=${type} and RUN_COUNT=1...${colors.reset}\n`);
   const child = spawn("cargo", ["run"], { cwd: path.join(projectRoot, "engine"), stdio: "inherit", shell: true });
   child.on("close", code => {
@@ -755,12 +756,12 @@ async function runVerify(signature) {
 
     console.log(`${colors.green}${colors.bold}Transaction Verified On-Chain!${colors.reset}\n`);
     console.log(`- Slot: ${colors.green}${tx.slot}${colors.reset}`);
-    
+
     const blockTime = tx.blockTime;
     if (blockTime) {
       console.log(`- Landed Time: ${new Date(blockTime * 1000).toISOString()}`);
     }
-    
+
     const fee = tx.meta?.fee;
     if (fee !== undefined) {
       console.log(`- Fee: ${colors.yellow}${fee} lamports${colors.reset} (${(fee / 1e9).toFixed(9)} SOL)`);
@@ -807,7 +808,7 @@ function killChildren() {
         } else {
           child.kill("SIGINT");
         }
-      } catch {}
+      } catch { }
     });
     children = [];
   }
@@ -821,12 +822,12 @@ process.on("SIGINT", () => {
 process.on("exit", killChildren);
 
 function startService(label, cmd, args, color, cwd = projectRoot) {
-  const child = spawn(cmd, args, { 
-    cwd, 
+  const child = spawn(cmd, args, {
+    cwd,
     shell: true,
     env: { ...process.env, FORCE_COLOR: "1" }
   });
-  
+
   children.push(child);
 
   const rlOut = readline.createInterface({ input: child.stdout });
@@ -868,6 +869,14 @@ function runDashboard() {
   });
 }
 
+function runDocs() {
+  console.log(`${colors.green}Running Docusaurus Site on Port 3001... (Ctrl+C to stop)${colors.reset}`);
+  const child = spawn("npm", ["run", "start", "--", "--port", "3001"], { cwd: path.join(projectRoot, "docs"), stdio: "inherit", shell: true });
+  child.on("close", code => {
+    console.log(`\n${colors.green}[docs]${colors.reset} Exited with code ${code}. Back at sentry> prompt.`);
+  });
+}
+
 function runDocker() {
   console.log(`${colors.cyan}Launching Docker Stack...${colors.reset}`);
   if (!commandExists("docker") || !commandExists("docker-compose")) {
@@ -884,15 +893,18 @@ function runAll(runCount) {
   printHeader();
   console.log(`${colors.bold}Starting complete Sentry pipeline concurrently...${colors.reset}`);
   if (runCount) process.env.RUN_COUNT = runCount.toString();
-  
+
   // 1. Dashboard on Green
   startService("dashboard", "npm", ["run", "dev"], colors.green, projectRoot);
-  
+
   // 2. Engine on Cyan
   startService("engine", "cargo", ["run"], colors.cyan, path.join(projectRoot, "engine"));
-  
+
   // 3. Agent daemon on Magenta
   startService("agent", "npm", ["run", "start"], colors.magenta, path.join(projectRoot, "agent"));
+
+  // 4. Docs on Yellow
+  startService("docs", "npm", ["run", "start", "--", "--port", "3001"], colors.yellow, path.join(projectRoot, "docs"));
 }
 
 // ---------------------------------------------------------------------------
@@ -900,7 +912,7 @@ function runAll(runCount) {
 // ---------------------------------------------------------------------------
 
 // Blocking commands that hand over stdio to a child process
-const BLOCKING_COMMANDS = new Set(["engine", "agent", "dashboard", "docker-up", "run"]);
+const BLOCKING_COMMANDS = new Set(["engine", "agent", "dashboard", "docker-up", "run", "docs"]);
 
 async function dispatch(cmd, parts, isRepl = false) {
   switch (cmd) {
@@ -949,6 +961,11 @@ async function dispatch(cmd, parts, isRepl = false) {
       runDashboard();
       break;
 
+    case "docs":
+      if (isRepl) console.log(`${colors.dim}Tip: docs runs in the foreground. Press Ctrl+C to stop it.${colors.reset}`);
+      runDocs();
+      break;
+
     case "docker-up":
       if (isRepl) console.log(`${colors.dim}Tip: docker-up runs in the foreground. Press Ctrl+C to stop it.${colors.reset}`);
       runDocker();
@@ -964,7 +981,7 @@ async function dispatch(cmd, parts, isRepl = false) {
       }
       if (isRepl) console.log(`${colors.dim}Tip: run starts all services. Press Ctrl+C to stop them.${colors.reset}`);
       runAll(runCount);
-      if (!isRepl) setInterval(() => {}, 1000); // keep alive in one-shot mode
+      if (!isRepl) setInterval(() => { }, 1000); // keep alive in one-shot mode
       break;
     }
 
@@ -994,6 +1011,7 @@ ${colors.bold}Available commands:${colors.reset}`);
   console.log(`  ${colors.green}engine${colors.reset}               compile & run the Rust bundle engine`);
   console.log(`  ${colors.green}agent${colors.reset}                run the AI agent daemon`);
   console.log(`  ${colors.green}dashboard${colors.reset}            start the Next.js dashboard`);
+  console.log(`  ${colors.green}docs${colors.reset}                 start the Docusaurus site`);
   console.log(`  ${colors.green}run [--count N]${colors.reset}      start all services concurrently`);
   console.log(`  ${colors.green}docker-up${colors.reset}            launch the full Docker stack`);
   console.log(`  ${colors.green}help${colors.reset}                 show this menu again`);

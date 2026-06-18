@@ -18,7 +18,7 @@ Be concise, highly technical but accessible, and directly answer their questions
 Break down what happened in the transaction. Use markdown.
 
 In your explanation, you MUST explicitly detail the role and difference between:
-1. **Yellowstone Stream (\`yellowstone_stream\` / gRPC)**: This is the high-performance confirmation source. It uses a live Yellowstone gRPC subscription to monitor transactions in real-time on-chain, completely bypassing the latency and overhead of standard HTTP polling. This satisfies the strict bounty requirement to confirm landing using stream subscriptions.
+1. **Yellowstone Stream (\`yellowstone_stream\` / gRPC)**: This is the high-performance confirmation source. It uses a live Yellowstone gRPC subscription to monitor transactions in real-time on-chain, completely bypassing the latency and overhead of standard HTTP polling.
 2. **RPC Polling Fallback (\`rpc_polling_fallback\`)**: This is the fallback path. If the gRPC stream misses the transaction or times out, the system polls the Solana RPC node's \`getSignatureStatuses\` endpoint until confirmation is reached.
 
 Based on the \`confirmation_source\` in the Transaction Context below:

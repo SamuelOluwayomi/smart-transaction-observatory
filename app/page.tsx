@@ -6,6 +6,7 @@ import {
   ArrowSquareOut,
   Brain,
   ClockCounterClockwise,
+  Copy,
   Cpu,
   Gauge,
   GitBranch,
@@ -394,6 +395,7 @@ export default function Home() {
     useWalletConnection();
   const [snapshot, setSnapshot] = useState<ObservatorySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copiedWallet, setCopiedWallet] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<RunProfile>("normal");
@@ -815,6 +817,7 @@ export default function Home() {
             <a href="#agent">Agent</a>
             <a href="#evidence">Evidence</a>
             <a href="#stack">Stack</a>
+            <a href="/docs" className="text-red-600 font-black">Docs</a>
           </nav>
           <div className="flex items-center gap-2">
             <span className="metal hidden border-2 border-foreground px-3 py-2 font-mono text-[11px] font-bold uppercase sm:inline-flex">
@@ -1008,12 +1011,30 @@ export default function Home() {
                 {formatNumber(snapshot?.slot)}
               </p>
               <div className="mt-5 grid grid-cols-2 gap-3 font-mono text-[11px] font-bold uppercase">
-                <span className="border border-background/40 px-3 py-2">
-                  {snapshot?.wallet
-                    ? shortId(snapshot.wallet)
-                    : "wallet pending"}
-                </span>
-                <span className="border border-background/40 px-3 py-2">
+                <button
+                  onClick={() => {
+                    if (snapshot?.wallet) {
+                      navigator.clipboard.writeText(snapshot.wallet);
+                      setCopiedWallet(true);
+                      setTimeout(() => setCopiedWallet(false), 2000);
+                    }
+                  }}
+                  disabled={!snapshot?.wallet}
+                  className="flex items-center justify-between border border-background/40 px-3 py-2 hover:bg-white/10 active:bg-white/20 transition-colors text-left disabled:cursor-not-allowed"
+                  title="Copy wallet address"
+                >
+                  <span className="truncate">
+                    {snapshot?.wallet
+                      ? copiedWallet
+                        ? "Copied!"
+                        : shortId(snapshot.wallet)
+                      : "wallet pending"}
+                  </span>
+                  {snapshot?.wallet && !copiedWallet && (
+                    <Copy size={13} className="ml-1 opacity-70 flex-shrink-0" />
+                  )}
+                </button>
+                <span className="border border-background/40 px-3 py-2 flex items-center">
                   {formatSol(snapshot?.balanceSol)}
                 </span>
               </div>

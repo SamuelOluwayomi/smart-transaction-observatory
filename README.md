@@ -31,8 +31,6 @@ Check out the interactive dashboard, execution logs, and landing flow in action:
 
 Please see the [Architecture Document](ARCHITECTURE.md) for a detailed breakdown of the system components.
 
-_Note for Bounty Submission: The contents of `ARCHITECTURE.md` should be copied to a public Notion or Google Doc and linked here to fully satisfy the "publicly hosted architecture document" requirement._
-
 ---
 
 ## Testing Modes (Local vs Daemon)
@@ -60,7 +58,7 @@ To run the full 12-run cycle, verify Yellowstone gRPC stream connectivity, and l
 
 ## Bounty Technical Questions
 
-Based on the operational evidence gathered by this stack, here are the answers to the three mandatory bounty questions:
+Here are the answers to the three mandatory bounty questions:
 
 ### Q1: What does the delta between processed_at and confirmed_at tell you?
 
@@ -235,7 +233,7 @@ YELLOWSTONE_TOKEN=
 
 ---
 
-## Bounty Checklist
+## Checklist
 
 - [x] Mainnet wallet funded
 - [x] Yellowstone gRPC stream implemented and actively sharing `submit_slot`

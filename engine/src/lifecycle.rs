@@ -40,7 +40,7 @@ pub struct BundleRun {
     pub error_reason: Option<String>,
     pub run_number: u32,
 
-    // Multi-stage lifecycle tracking (bounty requirement)
+    // Multi-stage lifecycle tracking
     pub submit_slot: Option<u64>,
     pub landed_slot: Option<u64>,
     pub processed_at: Option<DateTime<Utc>>,
@@ -48,7 +48,7 @@ pub struct BundleRun {
     pub finalized_at: Option<DateTime<Utc>>,
     pub confirmation_source: Option<String>,
 
-    // Failure classification (bounty requirement)
+    // Failure classification 
     pub failure_type: Option<String>,
     pub failure_stage: Option<String>,
     pub recovery: Option<String>,
