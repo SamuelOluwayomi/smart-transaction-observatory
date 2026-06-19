@@ -1,207 +1,690 @@
 # Sentry: Smart Transaction Stack
 
-A Solana infrastructure project built for the Superteam Nigeria Advanced Infrastructure Challenge: Build a Smart Transaction Stack bounty.
+A Solana infrastructure project built for the Superteam Nigeria **Advanced Infrastructure Challenge: Build a Smart Transaction Stack** bounty.
 
-Sentry is a full-stack transaction operations system. It streams live Solana network state, builds and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle, and utilizes an autonomous AI agent to make tip and retry decisions based on network risk.
+Sentry is a full-stack transaction operations system. It streams live Solana network state via Yellowstone gRPC, constructs and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle (`Processed` -> `Confirmed` -> `Finalized`), and deploys an autonomous AI agent to make real-time tip adjustment, retry, and hold decisions based on observed network risk.
 
 ## Project Resources
 
-- **Live Documentation**: [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/)
-- **GitHub Repository**: [https://github.com/SamuelOluwayomi/smart-transaction-observatory](https://github.com/SamuelOluwayomi/smart-transaction-observatory)
-- **Demo Video & Status Update**: [https://x.com/The_devsam/status/2065806306946981923?s=20](https://x.com/The_devsam/status/2065806306946981923?s=20)
+| Resource | URL |
+|---|---|
+| Live Documentation | [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/) |
+| GitHub Repository | [https://github.com/SamuelOluwayomi/smart-transaction-observatory](https://github.com/SamuelOluwayomi/smart-transaction-observatory) |
+| Demo Video | [https://x.com/The_devsam/status/2065806306946981923](https://x.com/The_devsam/status/2065806306946981923?s=20) |
 
 ---
 
-## Core System Architecture
+## Architecture Overview
 
-Sentry consists of four decoupled services orchestrating the transaction pipeline:
+Sentry is composed of four decoupled services that communicate through shared filesystem logs. Each service is independently deployable and can be run in isolation or orchestrated together via the CLI or Docker Compose.
 
-1. **Rust Engine** (`engine/`): A high-performance daemon written in Rust. It maintains a persistent Yellowstone gRPC connection to stream slot updates, constructs signed transaction payloads wrapped as Jito bundles, applies base tip calculations, monitors transaction signatures, and logs multi-stage commitment timestamps. It includes an automatic HTTP JSON-RPC polling fallback in case gRPC rate limits are reached.
-2. **AI Agent Daemon** (`agent/`): A standalone Node.js process that monitors the engine's telemetry logs. It analyzes historical latency, Jito tip floors, and network congestion using a local rules engine and a Groq LLM (llama-3.3-70b-versatile) to make autonomous decisions (submit, hold, or retry with tipping premium adjustments).
-3. **Next.js Web Console** (`app/`): A real-time monitoring dashboard served on port 3000. It reads execution logs, tracks wallet balances, displays Jito tip floor percentiles, streams slots via Server-Sent Events (SSE), and hosts an interactive AI documentation assistant.
-4. **Docusaurus Documentation Site** (`docs/`): A developer handbook served on port 3001 and deployed to Vercel. It outlines system architecture, failure classification tables, CLI commands, and features a cross-origin AI Chat assistant that queries Sentry's backend routes.
-
----
-
-## Infrastructure Integrations
-
-### SolInfra
-
-SolInfra is the primary high-performance infrastructure provider utilized in Sentry. It is configured to run behind a single API key, supplying:
-
-- **Reserved RPC capacity**: Dedicated RPC capacity preventing unexpected public endpoint throttling for critical operations such as blockhash fetching and signature verification.
-- **Yellowstone gRPC streaming**: Sub-millisecond validator event delivery bypassing public mempools.
-- **PAYG Billing Model**: A pay-as-you-go bytes-based billing system that optimizes operational costs.
-
-#### How Sentry Uses SolInfra
-1. **Live Slot Pulse**: The Rust engine opens a gRPC slot subscription at the `Processed` level. These slot notifications are cached in memory to stamp bundle submissions and feed the dashboard's real-time Slot Pulse panel.
-2. **Commitment Lifecycle Telemetry**: Upon submitting a bundle to Jito, the engine opens a gRPC transaction subscription to capture exact timestamps when the transaction hits `Processed`, `Confirmed`, and `Finalized` levels, enabling microsecond-precision latency analytics.
-
----
-
-## Setup & Installation
-
-### Prerequisites
-
-Ensure you have the following toolchains installed:
-- **Node.js**: Version 18 or higher (with npm)
-- **Rust & Cargo**: Stable Rust toolchain
-- **Docker & Docker Compose**: For containerized orchestration
-
-### Environment Configuration
-
-Create a `.env` file at the root of the project (and copy/link to `engine/.env` where appropriate) containing the following parameters:
-
-```env
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_WSS_URL=wss://api.mainnet-beta.solana.com
-YELLOWSTONE_ENDPOINT=https://grpc.solinfra.dev
-YELLOWSTONE_TOKEN=your_solinfra_api_key_here
-JITO_BLOCK_ENGINE_URL=https://mainnet.block-engine.jito.wtf
-GROQ_API_KEY=gsk_your_groq_api_key_here
-WALLET_PRIVATE_KEY=[122,94,84,33,...]
+```
+                      +---------------------------+
+                      |  SolInfra Yellowstone gRPC |
+                      |  (Slot + Tx Status Stream) |
+                      +-------------+-------------+
+                                    |
+                                    v
++------------------+    +-----------+-----------+    +--------------------+
+|  Jito Block      |<-->|  Rust Engine (engine/) |    |  Solana Mainnet    |
+|  Engine HTTP RPC |    |  - Slot streaming      |<-->|  RPC (Fallback)    |
+|  /api/v1/*       |    |  - Bundle construction |    |  getSignatureStatus|
++------------------+    |  - Lifecycle tracking  |    +--------------------+
+                        |  - Auto-retry logic    |
+                        +-----------+------------+
+                                    |
+                      writes lifecycle_log.jsonl
+                      writes agent_decisions.jsonl
+                                    |
+              +---------------------+---------------------+
+              |                                           |
+   +----------v----------+                  +-------------v-----------+
+   |  AI Agent (agent/)  |                  |  Next.js Console (app/) |
+   |  - Local rules      |                  |  - SSE slot stream      |
+   |  - Groq LLM chain   |                  |  - Bundle submission UI |
+   |  - Decision output  |                  |  - Evidence export      |
+   +---------------------+                  |  - AI chat assistant    |
+                                            +-------------------------+
+                                                        |
+                                            +-----------v-----------+
+                                            | Docusaurus Docs (docs/)|
+                                            | - System reference     |
+                                            | - Deployed to Vercel   |
+                                            +------------------------+
 ```
 
-*Note: The Next.js dashboard, CLI, and Rust engine resolve `YELLOWSTONE_ENDPOINT` and `YELLOWSTONE_TOKEN` directly for SolInfra's gRPC connection.*
+### Service Port Allocation
 
-### Local Installation & Dev Run
+| Service | Port | Description |
+|---|---|---|
+| Next.js Dashboard | `3000` | Real-time monitoring console and API server |
+| Docusaurus Docs | `3001` | Developer documentation handbook |
+| Rust Engine | N/A | Background daemon (no HTTP server) |
+| AI Agent | N/A | Background daemon (no HTTP server) |
 
-Initialize project packages and link the CLI executable globally:
+---
+
+## 1. Rust Engine (`engine/`)
+
+The core execution pipeline. Written in Rust for zero-overhead cryptographic operations and low-latency gRPC stream handling.
+
+### Source Modules
+
+| File | Responsibility |
+|---|---|
+| `main.rs` | Entry point. Spawns Yellowstone slot stream, runs the bundle submission loop, handles retry logic and failure injection. |
+| `config.rs` | Loads environment variables via `dotenv`. Defines the `Config` struct with fields for Yellowstone, Solana RPC, Jito, and wallet credentials. |
+| `geyser.rs` | Yellowstone gRPC transaction-status watcher. Opens a dedicated gRPC subscription filtered by transaction signature to detect on-chain landing at `Confirmed` commitment. |
+| `jito.rs` | Transaction construction and Jito submission. Queries `getTipAccounts`, builds memo + tip instructions, simulates via RPC, serializes to base64, and submits via `sendTransaction`. Includes the dynamic tip floor calculator. |
+| `lifecycle.rs` | Defines `BundleRun` and `BundleStatus` data structures. Implements `track_bundle()` which polls Solana RPC at each commitment level, concurrently checks Jito inflight status, and records timestamps. Writes structured JSONL logs. |
+| `build.rs` | Build script telling Cargo to use the system `protoc` binary for gRPC proto compilation. |
+
+### Yellowstone gRPC Slot Streaming
+
+On startup, the engine opens a persistent gRPC connection to the configured Yellowstone endpoint (SolInfra). It subscribes to slot updates at the `Processed` commitment level using `SubscribeRequestFilterSlots` with `filter_by_commitment: true`.
+
+Each new slot is written atomically into an `Arc<AtomicU64>` shared with the main submission loop. A `tokio::sync::Notify` is used to wake waiting tasks when a new slot arrives. The slot stream runs as a dedicated `tokio::spawn` background task for the lifetime of the process.
+
+The slot stream responds to `Ping` messages from the server by echoing `SubscribeRequestPing` replies to keep the connection alive.
+
+If the gRPC connection drops or the provider rate-limits (e.g., SolInfra's free tier limits to 1 concurrent stream), the engine logs a non-fatal warning and continues using the last-known slot value. The main submission loop is never blocked by stream failures.
+
+### Yellowstone gRPC Transaction Status Watcher
+
+After a bundle is submitted, `geyser.rs` opens a **second** gRPC connection to subscribe to `TransactionStatus` updates filtered by the exact transaction signature. This subscription uses `CommitmentLevel::Confirmed` and has a configurable timeout (default 25 seconds).
+
+When the target signature appears on-chain, the watcher returns a `StreamTxStatus` struct containing the slot, observation timestamp, and any execution errors. This is the **primary confirmation path** -- the lifecycle tracker uses it first before falling back to RPC polling.
+
+If this second stream is blocked by the provider's concurrent stream limit (the slot stream already occupies one), or if it times out, the lifecycle tracker silently falls back to RPC polling without any loss of diagnostic data.
+
+### Dynamic Tip Calculation
+
+Before each bundle, the engine queries the Jito tip floor API:
+
+```
+GET https://bundles.jito.wtf/api/v1/bundles/tip_floor
+```
+
+It extracts the `landed_tips_75th_percentile` value (in SOL), converts it to lamports, and clamps the result:
+
+- **Floor**: 30,000 lamports (minimum to avoid Jito rejection)
+- **Cap**: 100,000 lamports (budget protection)
+
+If the API call fails, the engine falls back to the 30,000 lamport floor.
+
+### Transaction Construction and Submission
+
+Each bundle consists of two instructions packed into a single Solana transaction:
+
+1. **Memo Instruction**: Writes a diagnostic string (e.g., `"Sentry | bounty demo"`) via the SPL Memo program (`MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`), with the operator wallet as a signer.
+2. **Tip Transfer**: A `SystemProgram::Transfer` instruction sending the calculated tip to a randomly-selected Jito tip account.
+
+The Jito tip account is selected by first querying `getTipAccounts` from the Jito Block Engine RPC. If the query returns an empty list, the engine falls back to 8 hardcoded tip account addresses.
+
+The transaction is:
+1. **Simulated** against Solana RPC (`simulateTransaction`) to validate instruction logic and compute units.
+2. **Signed** with a fresh blockhash fetched via `getLatestBlockhash`.
+3. **Serialized** to base64 using `bincode` + the standard base64 engine.
+4. **Submitted** via `POST /api/v1/transactions` on the Jito Block Engine (using `sendTransaction`, not `sendBundle`).
+
+The `x-bundle-id` HTTP response header is captured to uniquely identify the bundle for lifecycle tracking.
+
+The submission includes an exponential backoff retry loop (up to 4 attempts) that handles Jito rate limiting (HTTP 429 or JSON-RPC error code `-32097`). Backoff delays are 2s, 4s, 6s, 8s.
+
+### Multi-Stage Lifecycle Tracking
+
+After submission, `lifecycle.rs::track_bundle()` runs a polling loop (default: 15 polls, 4-second intervals = 60 seconds max) that simultaneously queries two sources:
+
+**Solana RPC (`getSignatureStatuses`)**:
+- Records timestamps at each commitment level transition:
+  - `processed_at`: First observation by the validator
+  - `confirmed_at`: Supermajority (66%+) validator vote ratification
+  - `finalized_at`: Block becomes irreversible
+- Calculates latency deltas between each transition
+- Marks the bundle as `Landed` once `Confirmed` is reached
+
+**Jito Inflight Status (`getInflightBundleStatuses`)**:
+- Checked concurrently before the transaction appears in Solana RPC
+- Detects early Jito-side rejections (`Failed`, `Invalid`) before they would ever appear on-chain
+- Reports `Landed` with slot information if Jito has already confirmed it
+
+### Autonomous Retry Logic
+
+When a non-intentional failure occurs (the bundle was not an injected fault test), the engine automatically:
+
+1. Fetches a fresh blockhash via `getLatestBlockhash`
+2. Recalculates the live tip from the Jito tip floor API
+3. Rebuilds and resubmits the bundle
+4. Runs the full lifecycle tracking on the retry
+
+The retry result is logged as a separate JSONL entry with a `recovery` field describing the original failure and the retry parameters.
+
+### Failure Injection
+
+The engine supports two intentional failure modes for testing the failure classification system:
+
+| Mode | Trigger | Behavior |
+|---|---|---|
+| `zero-tip` | `FAIL_TEST=zero-tip` | Sets tip to 0 lamports. Jito requires nonzero tips, so the bundle is rejected. |
+| `expired-hash` | `FAIL_TEST=expired-hash` | Uses `Hash::default()` (all zeros) as the blockhash. Solana simulation fails immediately with `BlockhashNotFound`. |
+
+When running the full 12-run cycle (default `RUN_COUNT=12`), the engine automatically injects failures on runs 11 (zero-tip) and 12 (1-lamport micro-tip) without needing environment variable overrides.
+
+### Failure Classification
+
+Every non-landed bundle is tagged with structured metadata:
+
+| Field | Description |
+|---|---|
+| `failure_type` | Machine-readable category: `zero_tip`, `blockhash_expired`, `rate_limit_exhausted`, `jito_rejection`, `simulation_failure`, `on_chain_error`, `confirmation_timeout`, `not_landed`, `build_error`, `stream_observed_on_chain_error` |
+| `failure_stage` | Where the failure occurred: `tip_calculation`, `pre_submission`, `submission`, `block_engine`, `execution`, `confirmation`, `yellowstone_transaction_status`, `pre-tracking` |
+| `recovery` | Human-readable recovery guidance |
+
+### Log Output
+
+The engine writes JSONL telemetry to two locations simultaneously:
+
+```
+engine/lifecycle_log.jsonl    (engine-local)
+logs/lifecycle_log.jsonl      (project-level, for dashboard consumption)
+```
+
+Each line is a serialized `BundleRun` struct containing: `bundle_id`, `signature`, `tip_lamports`, `tip_account`, `status`, `submitted_at`, `landed_at`, `error_reason`, `run_number`, `submit_slot`, `landed_slot`, `processed_at`, `confirmed_at`, `finalized_at`, `confirmation_source`, `failure_type`, `failure_stage`, `recovery`.
+
+### Rust Dependencies
+
+| Crate | Version | Purpose |
+|---|---|---|
+| `yellowstone-grpc-client` | v12.1.0+solana.3.1.9 | gRPC client for Yellowstone validator streams |
+| `yellowstone-grpc-proto` | v12.1.0+solana.3.1.9 | Protobuf definitions for Yellowstone messages |
+| `solana-sdk` | ^2.1 | Transaction construction, signing, serialization |
+| `solana-rpc-client` | ^2.1 | JSON-RPC client for Solana |
+| `tokio` | 1 (full features) | Async runtime |
+| `tonic` | 0.14 (tls-webpki-roots) | gRPC transport layer |
+| `reqwest` | 0.12 (json) | HTTP client for Jito API |
+| `chrono` | 0.4 (serde) | Timestamp recording |
+| `serde` / `serde_json` | 1 | JSONL serialization |
+| `bs58` | 0.5 | Base58 encoding for signatures |
+| `base64` | 0.22 | Base64 encoding for Jito submission |
+| `bincode` | 1 | Binary serialization for transactions |
+| `rand` | 0.8 | Random tip account selection |
+| `anyhow` | 1 | Error handling |
+| `tracing` / `tracing-subscriber` | 0.1 / 0.3 | Structured logging |
+| `dotenv` | 0.15 | `.env` file loading |
+
+---
+
+## 2. AI Agent Daemon (`agent/`)
+
+A standalone Node.js/TypeScript process that operates as an autonomous observer and decision-maker. It does not wrap sequential function calls -- it reasons about the observed state of the transaction pipeline and produces a justified operational decision.
+
+### Decision Pipeline
+
+The agent runs in cycles (single-shot or daemon mode with configurable polling interval):
+
+1. **State Ingestion**: Reads `lifecycle_log.jsonl` (from the Rust engine), queries the Jito tip floor API (`/api/v1/bundles/tip_floor`), and fetches the current Solana slot via RPC.
+
+2. **Analysis**: Computes metrics from the most recent 10 runs:
+   - `landedRate`: Ratio of `Landed` to total runs
+   - `avgLandedTip`: Mean tip of successfully landed bundles
+   - `avgDeltaMs`: Mean latency between `processed_at` and `confirmed_at` (network congestion indicator)
+   - `failureTypes`: Array of recent `failure_type` values
+   - `p75Lamports` / `p95Lamports`: Current Jito tip floor percentiles converted to lamports
+
+3. **Local Reasoning**: A deterministic rules engine produces the first decision:
+
+   | Condition | Action | Tip Adjustment |
+   |---|---|---|
+   | `landedRate < 0.5` AND recoverable failures (blockhash/rate-limit) AND `totalRuns >= 3` | `retry` | +30% above base |
+   | `landedRate < 0.3` AND `totalRuns >= 5` | `hold` | N/A |
+   | `avgDeltaMs > 15000` (congestion) | `submit` | +20% above base |
+   | `landedRate >= 0.9` AND `totalRuns >= 3` | `submit` | Standard p75 |
+   | Default | `submit` | Standard p75 |
+
+4. **LLM Enhancement**: The local decision is forwarded to a Groq LLM chain for second-opinion reasoning. The agent sends a structured JSON prompt containing the observed state, the local agent's suggestion, and strict constraints (e.g., "Never recommend a tip below the Jito p75 floor"). The LLM returns a structured JSON decision with `action`, `recommended_tip_lamports`, `confidence`, `reason`, and `observed_risk`.
+
+   The agent tries multiple models in sequence: `openai/gpt-oss-120b` -> `llama-3.3-70b-versatile` -> `llama-3.1-8b-instant`. If all models fail, the local decision is used as a fallback (marked `fallback: true`).
+
+5. **Decision Output**: The final decision is appended to `agent_decisions.jsonl` as a structured JSON line:
+
+   ```json
+   {
+     "id": "uuid",
+     "created_at": "ISO-8601",
+     "model": "llama-3.3-70b-versatile",
+     "fallback": false,
+     "action": "submit",
+     "recommended_tip_lamports": 45000,
+     "confidence": 0.92,
+     "reason": "Strong landing rate of 90% across 10 runs...",
+     "observed_risk": "No unusual risk detected. Network is healthy."
+   }
+   ```
+
+### Daemon Mode
+
+When `DAEMON=true` is set, the agent runs continuously with a configurable polling interval (`DAEMON_INTERVAL`, default 10000ms). This is how it operates inside Docker Compose.
+
+### Tip Safety Bounds
+
+All tip recommendations are clamped:
+- **Minimum**: 30,000 lamports
+- **Maximum**: 150,000 lamports (LLM path) / 100,000 lamports (local path)
+
+---
+
+## 3. Next.js Web Console (`app/`)
+
+A real-time monitoring dashboard built with Next.js 15, React 19, and Tailwind CSS 4. Served on port 3000.
+
+### API Routes
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/observatory` | Returns a full system snapshot: live Solana slot, wallet address and balance, Jito tip percentiles (p25/p50/p75/p95), all bundle runs with lifecycle data, latest AI agent decision, and health checks. |
+| `GET` | `/api/slots/stream` | Server-Sent Events (SSE) endpoint that streams real-time slot numbers and timestamps as they arrive from the Yellowstone gRPC client. |
+| `POST` | `/api/submit-bundle/stream` | Triggers a bundle submission and streams progress events (Preflight, Dynamic Tip Calculation, Signing, Jito Submission, Confirmation Polling) as an SSE response. |
+| `POST` | `/api/analyze` | Accepts a transaction run context and user messages. Sends them to Groq (`llama-3.3-70b-versatile`) with a system prompt that explains the difference between `yellowstone_stream` and `rpc_polling_fallback` confirmation sources. Returns AI analysis of the specific run's latency deltas and network conditions. |
+| `POST` | `/api/docs/chat` | Cross-origin AI chat endpoint for the Docusaurus documentation site. Includes CORS headers (`Access-Control-Allow-Origin: *`) and an `OPTIONS` preflight handler. Uses Groq with a system prompt containing the full Sentry technical blueprint. |
+| `GET` | `/api/evidence` | Generates and downloads a judge-ready Markdown report (`smart-tx-evidence.md`) containing the full lifecycle log, latency statistics, and AI decisions. |
+
+### Dashboard Features
+
+- **Slot Pulse Panel**: Live-updating display of the current network slot, sourced from the SSE stream.
+- **Lifecycle Lane**: Visual progression of each transaction through `Submitted` -> `Processed` -> `Confirmed` -> `Finalized`.
+- **Run Evidence Table**: Tabular log of every run showing submit/landed slots, tip amounts, latency deltas, confirmation source, and failure classifications.
+- **Agent Reasoning Panel**: Displays the AI agent's last decision including action, recommended tip, confidence score, and plain-english risk assessment.
+- **Interactive Bundle Submission**: Trigger manual bundle submissions from the dashboard with real-time progress streaming.
+- **Evidence Export**: One-click download of a Markdown verification report for bounty submission.
+
+---
+
+## 4. Docusaurus Documentation (`docs/`)
+
+A developer reference handbook built with Docusaurus 3 (TypeScript) and deployed to Vercel at [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/).
+
+### Documentation Pages
+
+| Page | Description |
+|---|---|
+| System Overview | Introduction, core features, prerequisites, environment configuration, and service bootstrapping instructions. |
+| Architecture | Detailed breakdown of Yellowstone gRPC integration, Jito bundle pipeline (8-step submission flow), Docker multi-container grid, and shared volume communication. |
+| AI Agent | Agent reasoning pipeline, state ingestion, decision output contract, and LLM chain fallback behavior. |
+| CLI & API Reference | Full command reference table and API endpoint documentation. |
+| Troubleshooting | Common error resolution (insufficient funds, blockhash not found, Yellowstone stream disconnected). |
+| SolInfra | Infrastructure provider documentation: services offered, how Sentry uses them, and configuration guide. |
+
+### AI Chat Assistant
+
+The docs site includes an embedded `<AIAssistant />` React component that makes cross-origin POST requests to the Next.js dashboard's `/api/docs/chat` endpoint. This allows developers to ask questions about Sentry's architecture directly from the documentation site.
+
+---
+
+## 5. Command-Line Interface (`cli.js`)
+
+A unified operator binary (1,084 lines) accessible via `sentry` after running `npm link`. Supports interactive REPL and one-shot execution modes.
+
+### Installation
 
 ```bash
 npm install
 npm link
 ```
 
-Launch the entire stack (Dashboard, Engine, Agent, and Docs) concurrently:
+Requires Node.js >= 18. The CLI automatically loads `.env` from the project root.
 
-```bash
-sentry run
-```
-
----
-
-## Command-Line Interface (`sentry`)
-
-Sentry features a unified command-line utility accessible via `sentry` (after running `npm link`). It supports two execution workflows:
-
-### 1. Interactive REPL Mode
-
-Launch the operator console by running the executable without arguments:
+### Interactive REPL
 
 ```bash
 sentry
 ```
 
-Inside the persistent prompt, enter any command. The prompt returns after executing non-blocking commands, or when blocking daemons are exited using Ctrl+C:
+Launches a persistent `sentry>` prompt. Non-blocking commands return to the prompt immediately. Blocking commands (`engine`, `agent`, `dashboard`, `docs`, `run`, `docker-up`) hand stdio to the child process and resume the REPL when the child exits (Ctrl+C).
 
-```text
-sentry> status          # Snapshot of live slot, balance, and last runs
-sentry> analyze         # Run mathematical telemetry audits and AI insights
-sentry> ask "why did run 6 fail?"
-sentry> docs            # Starts the Docusaurus documentation site
-sentry> run             # Spins up all 4 pipeline services concurrently
-sentry> exit
-```
-
-### 2. One-Shot Mode
-
-Run commands directly for automation scripts or Docker use:
+### One-Shot Mode
 
 ```bash
-sentry status
-sentry analyze
-sentry evidence
-sentry verify <signature>
-sentry fail-test zero-tip
-sentry fail-test expired-hash
-sentry run --count 10
-sentry docs
-sentry engine
-sentry agent
-sentry dashboard
-sentry docker-up
+sentry <command> [args]
 ```
+
+### Full Command Reference
+
+| Command | Description | Blocking |
+|---|---|---|
+| `status` | Print live network slot, wallet balance (via RPC), pipeline configuration paths, last 5 bundle runs (with status, tip, slots, latency deltas, confirmation source), and latest AI agent decisions. | No |
+| `analyze` | Compute deterministic statistics from lifecycle logs (landed rate, median tips, latency percentiles, failure breakdown) and generate an AI-powered diagnostic audit report via Groq. | No |
+| `evidence` | Calculate aggregate latency statistics and compile a judge-ready Markdown verification report (`evidence.md`) with all run data, slot deltas, and AI reasoning trails. | No |
+| `ask [query]` | Open an interactive AI chat session, or ask a single question. Uses Groq (`llama-3.3-70b-versatile`) with full lifecycle log context injected into the system prompt. | No |
+| `verify <signature>` | Audit a specific transaction signature on Solana Mainnet via `getTransaction` RPC. Reports slot, fee, block time, memo data, account keys, and balance changes. | No |
+| `fail-test <type>` | Inject a deliberate failure. Accepted types: `zero-tip` (sets `FAIL_TEST=zero-tip`, `RUN_COUNT=1`) or `expired-hash` (sets `FAIL_TEST=expired-hash`, `RUN_COUNT=1`). Runs the engine with the injected fault. | Yes |
+| `run [--count N]` | Start all 4 services concurrently: Dashboard (port 3000), Engine (`cargo run`), Agent (`npm start`), and Docs (port 3001). Optional `--count` limits the engine's bundle loop. | Yes |
+| `engine` | Compile and run the Rust engine in isolation (`cargo run` in `engine/`). | Yes |
+| `agent` | Run the AI agent daemon in isolation (`npm run start` in `agent/`). | Yes |
+| `dashboard` | Start the Next.js development server (`npm run dev` in project root). | Yes |
+| `docs` | Start the Docusaurus development server on port 3001 (`npm run start -- --port 3001` in `docs/`). | Yes |
+| `docker-up` | Run `docker-compose up --build` from the project root. | Yes |
 
 ---
 
-## CLI Command Reference
+## 6. Docker Orchestration
 
-| Command | Description |
+The stack is fully containerized using Docker Compose with three services and a shared named volume.
+
+### Container Architecture
+
+| Service | Base Image | Dockerfile | Command | Ports |
+|---|---|---|---|---|
+| `engine` | `rust:1.77-slim-bookworm` (build) / `debian:bookworm-slim` (run) | `engine/Dockerfile` | `/app/engine` | None |
+| `agent` | `node:20-alpine` | `Dockerfile` (root) | `npx tsx agent/src/index.ts` | None |
+| `dashboard` | `node:20-alpine` | `Dockerfile` (root) | `npm run start` | `3000:3000` |
+
+### Shared Volume
+
+A Docker volume named `sentry-data` is mounted at `/app/shared` inside all three containers. Environment variables redirect log paths:
+
+| Variable | Container Value | Purpose |
+|---|---|---|
+| `LIFECYCLE_LOG_PATH` | `/app/shared/lifecycle_log.jsonl` | Engine writes, Agent and Dashboard read |
+| `AGENT_DECISIONS_PATH` | `/app/shared/agent_decisions.jsonl` | Agent writes, Dashboard reads |
+| `LOGS_DIR` | `/app/shared/logs` | Engine writes secondary log copy |
+
+### Engine Dockerfile (Multi-Stage Build)
+
+The engine uses a two-stage Docker build:
+
+1. **Builder stage** (`rust:1.77-slim-bookworm`): Installs `pkg-config`, `libssl-dev`, `protobuf-compiler`, `libzstd-dev`, and `build-essential`. Uses a Cargo workspace caching strategy (compile dependencies first with a dummy `main.rs`, then copy real sources) to minimize rebuild times.
+
+2. **Runner stage** (`debian:bookworm-slim`): Copies only the compiled binary and installs minimal runtime libraries (`ca-certificates`, `libssl3`, `libzstd1`).
+
+### Agent Configuration
+
+The agent container runs with `DAEMON=true` and `DAEMON_INTERVAL=10000` (10-second polling cycle). It depends on the engine service and restarts unless stopped.
+
+### Commands
+
+```bash
+# Build and start all services
+docker compose up --build
+
+# Or via CLI
+sentry docker-up
+
+# Shutdown and remove volumes
+docker compose down -v
+```
+
+The dashboard is accessible at `http://localhost:3000`.
+
+---
+
+## 7. Infrastructure Dependencies
+
+### SolInfra ([solinfra.dev](https://solinfra.dev/))
+
+SolInfra is the primary Yellowstone gRPC provider. It supplies:
+
+- **Reserved RPC**: Dedicated capacity with per-method rate limiting, regional routing, and SLA-backed uptime. Sentry uses this for `getLatestBlockhash`, `getBalance`, `getSignatureStatuses`, and `simulateTransaction`.
+- **Yellowstone gRPC Streaming**: Sub-millisecond validator event delivery. Sentry uses two subscription types:
+  1. **Slot subscriptions** (`SubscribeRequestFilterSlots`): Receive every new validator slot at `Processed` commitment level, before confirmation or finalization.
+  2. **Transaction status subscriptions** (`SubscribeRequestFilterTransactions`): Watch specific transaction signatures for on-chain landing at `Confirmed` commitment.
+- **PAYG Billing**: Pay-as-you-go bytes-based billing for gRPC consumption.
+
+**How Sentry Uses SolInfra**:
+
+1. **Live Slot Pulse**: The Rust engine opens a persistent gRPC slot subscription. Slot numbers are atomically cached in memory to stamp bundle submissions (`submit_slot`) and feed the dashboard's real-time Slot Pulse panel via SSE.
+2. **Transaction Lifecycle Confirmation**: After submitting a bundle, the engine opens a gRPC transaction subscription to capture the exact moment the transaction hits `Confirmed` status, providing microsecond-precision latency measurements.
+3. **Graceful Fallback**: If the provider's concurrent stream limit is reached (e.g., SolInfra free tier allows 1 stream, which the slot subscription occupies), the transaction status watcher times out and the engine falls back to Solana RPC polling. This is a **positive resilience pattern**, not a limitation of the codebase.
+
+### Jito Block Engine
+
+Sentry interfaces with the Jito Block Engine for bundle submission and tip management:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/bundles` | `getTipAccounts` | Fetch the current list of Jito tip recipient addresses |
+| `/api/v1/transactions` | `sendTransaction` | Submit a base64-encoded signed transaction (Jito wraps it as a bundle) |
+| `/api/v1/bundles` | `getInflightBundleStatuses` | Check bundle status before it appears in Solana RPC |
+| `bundles.jito.wtf/api/v1/bundles/tip_floor` | `GET` | Fetch live tip percentiles for dynamic tip calculation |
+
+### Groq API
+
+The AI agent and dashboard use the Groq inference API for LLM-powered reasoning:
+
+| Parameter | Value |
 |---|---|
-| `status` | Print real-time pipeline state (network slot, balance, runs, AI decisions) |
-| `evidence` | Calculate latency statistics and compile a judge-ready markdown verification report |
-| `ask [query]` | Ask the AI agent a question or open an interactive terminal chat session |
-| `analyze` | Generate an autonomous system diagnostic audit report |
-| `verify <sig>` | Audit transaction slot, fee, and memos directly on-chain via RPC |
-| `run [--count N]` | Start all 4 services concurrently (Dashboard, Engine, Agent, Docs) |
-| `fail-test <type>`| Inject failure runs to verify AI classification (`zero-tip` or `expired-hash`) |
-| `engine` | Compile and run the Rust bundle submission engine daemon |
-| `agent` | Run the Node.js AI agent reasoning daemon |
-| `dashboard` | Start the Next.js monitoring dashboard console (Port 3000) |
-| `docs` | Start the Docusaurus documentation site locally (Port 3001) |
-| `docker-up` | Spin up the complete containerized stack via Docker Compose |
+| Endpoint | `https://api.groq.com/openai/v1/chat/completions` |
+| Primary Model | `llama-3.3-70b-versatile` |
+| Fallback Models | `openai/gpt-oss-120b`, `llama-3.1-8b-instant` |
+| Temperature | `0.1` (deterministic reasoning) |
+| Max Tokens | `360` (agent), unlimited (dashboard chat) |
 
 ---
 
-## Docker Orchestration
+## 8. Setup and Installation
 
-The Sentry stack is containerized with Docker. A shared docker volume binds directories to sync logs and agent decisions across containers dynamically.
+### Prerequisites
 
-To start the Docker stack:
+| Tool | Minimum Version | Purpose |
+|---|---|---|
+| Node.js | 18+ | Dashboard, Agent, CLI, Docusaurus |
+| npm | Bundled with Node | Package management |
+| Rust (Cargo) | Stable toolchain | Engine compilation |
+| protobuf-compiler | Any | gRPC proto compilation for Yellowstone |
+| Docker + Compose | Any recent | Containerized orchestration (optional) |
 
-```bash
-sentry docker-up
+### Environment Configuration
+
+Create a `.env` file at the project root:
+
+```env
+# Solana Network
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+SOLANA_WSS_URL=wss://api.mainnet-beta.solana.com
+
+# SolInfra Yellowstone gRPC
+YELLOWSTONE_ENDPOINT=https://grpc.solinfra.dev
+YELLOWSTONE_TOKEN=your_solinfra_api_key_here
+
+# Jito Block Engine
+JITO_BLOCK_ENGINE_URL=https://mainnet.block-engine.jito.wtf
+
+# Groq AI (for agent and dashboard)
+GROQ_API_KEY=gsk_your_groq_api_key_here
+
+# Operator Wallet (JSON array of ed25519 keypair bytes)
+WALLET_PRIVATE_KEY=[122,94,84,33,...]
 ```
 
-Or run natively:
+The Rust engine also reads from `engine/.env` if present. The CLI and agent resolve variables from both locations.
+
+**Important**: The wallet must hold at least **50,000 lamports** (0.00005 SOL) for the engine to start. The engine validates balance on startup and exits if insufficient.
+
+### Quick Start (Local)
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/SamuelOluwayomi/smart-transaction-observatory.git
+cd smart-transaction-observatory
+
+# 2. Install Node.js dependencies
+npm install
+
+# 3. Install agent dependencies
+cd agent && npm install && cd ..
+
+# 4. Link the CLI globally
+npm link
+
+# 5. Configure environment variables
+cp .env.example .env
+# Edit .env with your credentials
+
+# 6. Launch all services
+sentry run
+```
+
+This starts the Dashboard (port 3000), Rust Engine, AI Agent, and Docs (port 3001) concurrently.
+
+### Running Individual Services
+
+```bash
+# Rust Engine only
+cd engine
+cargo run
+
+# AI Agent only
+cd agent
+npm start
+
+# Dashboard only
+npm run dev
+
+# Docs only
+cd docs
+npm run start -- --port 3001
+```
+
+### Docker Quick Start
+
+```bash
+# Ensure .env is configured at project root
 docker compose up --build
 ```
 
-The Next.js dashboard will be accessible at `http://localhost:3000`.
-
 ---
 
-## Bounty Technical Questions
+## 9. Bounty Technical Questions
 
 ### Q1: What does the delta between processed_at and confirmed_at tell you?
 
 The delta between `Processed` and `Confirmed` represents the time it takes for a supermajority (66%+) of the Solana validator network to vote on and ratify the block containing the transaction.
 
-- **Low Delta (e.g., 400-800ms)**: Indicates a healthy, highly responsive network with fast vote propagation.
-- **High Delta (e.g., >2000ms)**: Indicates network congestion, validator fork resolution, or heavy voting load. In our stack, the AI Agent monitors this delta; if the median latency spikes, the agent autonomously increases the Jito tip premium to prioritize our bundles during the congestion.
+- **Low Delta (400-800ms)**: Healthy network with fast vote propagation. Validators are reaching consensus quickly, indicating low contention for block space and efficient gossip propagation.
+- **High Delta (>2000ms)**: Network congestion, validator fork resolution, or heavy voting load. In Sentry, the AI Agent monitors this delta. If the median latency spikes above the 15-second threshold, the agent autonomously increases the Jito tip premium by 20% to prioritize bundles during congestion.
 
 ### Q2: Why should you never use finalized commitment for your blockhash in time-sensitive transactions?
 
-A blockhash remains valid for exactly 150 slots. By using a `Finalized` blockhash (which is already ~32 slots or ~12.8 seconds old by the time you fetch it), you are artificially shortening the validity window of your transaction by roughly 20%. In time-sensitive operations, every second counts. Using a `Confirmed` or `Processed` blockhash ensures you have the maximum possible runway (the full 150 slots) for your transaction to land and be retried if necessary before it expires.
+A blockhash remains valid for exactly 150 slots (~60 seconds at 400ms/slot). A `Finalized` blockhash is already ~32 slots old (~12.8 seconds) by the time it is fetched, because finalization requires 31 additional confirmed blocks to pass. This artificially shortens the transaction's validity window by approximately 20%.
+
+In time-sensitive operations -- particularly Jito bundle submissions where the leader schedule matters -- every second of validity window is critical for landing and retry attempts. Sentry uses `Confirmed` or `Processed` blockhashes to ensure the maximum possible runway for the transaction to land before it expires.
 
 ### Q3: What happens to your bundle if the Jito leader skips their slot?
 
-If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the next available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
+If the targeted Jito leader skips their slot, the Jito Block Engine drops the bundle and the transaction does not land in that slot. However, because Jito validators constitute a large percentage of the Solana network (often appearing back-to-back in the leader schedule), the Block Engine can forward the bundle to the next available Jito leader, provided the blockhash is still valid.
+
+If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle ultimately fails. Sentry's auto-retry mechanism detects this failure, fetches a fresh blockhash, recalculates the live tip from the Jito floor API, and resubmits the bundle automatically.
 
 ---
 
-## Dashboard APIs
+## 10. Lifecycle Log Schema
 
-- `GET /api/observatory`: Returns live network slot, wallet balance, Jito tip percentiles, run logs, and the latest AI decisions.
-- `GET /api/slots/stream`: Server-Sent Events (SSE) route streaming real-time slot and timestamp data.
-- `POST /api/submit-bundle/stream`: Triggers engine run and streams CLI-like progress logs (dynamic tip sizing, signature generation, landing status).
-- `POST /api/docs/chat`: Direct chat router with Groq, configured with CORS support to interface with Vercel-hosted docs.
+Each entry in `lifecycle_log.jsonl` is a serialized `BundleRun`:
+
+```json
+{
+  "bundle_id": "5abc...def",
+  "signature": "3xyz...789",
+  "tip_lamports": 45000,
+  "tip_account": "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
+  "status": "Landed",
+  "submitted_at": "2025-06-19T10:30:00Z",
+  "landed_at": "2025-06-19T10:30:02Z",
+  "error_reason": null,
+  "run_number": 1,
+  "submit_slot": 427137627,
+  "landed_slot": 427137630,
+  "processed_at": "2025-06-19T10:30:01.200Z",
+  "confirmed_at": "2025-06-19T10:30:01.800Z",
+  "finalized_at": "2025-06-19T10:30:14.500Z",
+  "confirmation_source": "yellowstone_stream",
+  "failure_type": null,
+  "failure_stage": null,
+  "recovery": null
+}
+```
+
+### Confirmation Sources
+
+| Value | Meaning |
+|---|---|
+| `yellowstone_stream` | Transaction was confirmed via Yellowstone gRPC transaction-status subscription (primary path) |
+| `rpc_polling_fallback` | Transaction was confirmed via Solana RPC `getSignatureStatuses` polling (fallback path) |
 
 ---
 
-## Telemetry Checklist
+## 11. Project File Structure
 
-- [x] Mainnet wallet funded and validated.
-- [x] Yellowstone gRPC stream active and tracking Processed slot intervals.
-- [x] Jito bundle submission executing via JSON-RPC sendTransaction.
-- [x] Dynamic Jito tips referencing 75th percentile floors with caps.
-- [x] Telemetry capturing three-stage commitment levels (Processed, Confirmed, Finalized).
-- [x] Autonomous Node.js AI agent resolving pipeline decisions.
-- [x] Auto-retry blockhash loops active on expired transaction slots.
-- [x] Verified and formatted system architecture document.
-- [x] Bounty question technical audits documented.
-- [ ] 10 successful live runs processed through the Rust engine.
-- [ ] 2 intentional failure runs classified (`zero-tip`, `expired-hash`).
+```
+smart-tx-observatory/
+|-- engine/                          # Rust engine daemon
+|   |-- src/
+|   |   |-- main.rs                  # Entry point, slot stream, submission loop
+|   |   |-- config.rs                # Environment variable loader
+|   |   |-- geyser.rs                # Yellowstone gRPC transaction watcher
+|   |   |-- jito.rs                  # Transaction construction and Jito submission
+|   |   |-- lifecycle.rs             # Lifecycle tracking and JSONL logging
+|   |-- Cargo.toml                   # Rust dependencies
+|   |-- Dockerfile                   # Multi-stage Rust build
+|   |-- build.rs                     # Protobuf compiler directive
+|
+|-- agent/                           # AI agent daemon
+|   |-- src/
+|   |   |-- index.ts                 # State ingestion, reasoning, Groq chain
+|   |-- package.json                 # Agent dependencies (tsx)
+|
+|-- app/                             # Next.js 15 dashboard
+|   |-- page.tsx                     # Main dashboard UI
+|   |-- layout.tsx                   # Root layout with metadata and fonts
+|   |-- globals.css                  # Tailwind CSS 4 configuration
+|   |-- api/
+|       |-- observatory/route.ts     # System snapshot endpoint
+|       |-- submit-bundle/
+|       |   |-- route.ts             # Bundle submission trigger
+|       |   |-- stream/route.ts      # SSE bundle progress stream
+|       |-- slots/stream/route.ts    # SSE slot stream
+|       |-- evidence/route.ts        # Markdown evidence export
+|       |-- analyze/route.ts         # AI transaction analysis
+|       |-- docs/chat/route.ts       # Cross-origin AI chat for docs
+|
+|-- docs/                            # Docusaurus 3 documentation site
+|   |-- docs/
+|   |   |-- system-overview.md       # Setup and introduction
+|   |   |-- architecture.md          # Technical architecture
+|   |   |-- ai-agent.md              # Agent reasoning documentation
+|   |   |-- cli-repl.md              # CLI and API reference
+|   |   |-- failure-handling.md      # Troubleshooting guide
+|   |   |-- solinfra.md              # SolInfra integration details
+|   |-- docusaurus.config.ts         # Site configuration
+|   |-- src/components/              # Custom React components
+|
+|-- lib/
+|   |-- observatory.ts               # Core dashboard logic (snapshot, evidence, submission)
+|
+|-- cli.js                           # Unified CLI binary (1,084 lines)
+|-- docker-compose.yml               # 3-service orchestration
+|-- Dockerfile                       # Node.js image (dashboard + agent)
+|-- ARCHITECTURE.md                  # Standalone architecture document
+|-- package.json                     # Root dependencies and scripts
+|-- .env                             # Environment configuration (gitignored)
+```
+
+---
+
+## 12. Telemetry Verification Checklist
+
+- [x] Mainnet wallet funded and validated (minimum 50,000 lamports enforced at startup)
+- [x] Yellowstone gRPC slot stream active at `Processed` commitment level
+- [x] Yellowstone gRPC transaction-status watcher implemented for signature-level confirmation
+- [x] Jito bundle submission via `sendTransaction` with `x-bundle-id` header capture
+- [x] Dynamic Jito tips calculated from 75th percentile floor (30k-100k lamport range)
+- [x] Three-stage commitment lifecycle tracking (`Processed` -> `Confirmed` -> `Finalized`)
+- [x] Latency deltas computed between each commitment transition
+- [x] Autonomous AI agent with local reasoning + Groq LLM chain
+- [x] Autonomous retry with fresh blockhash on non-intentional failures
+- [x] Failure classification with machine-readable type, stage, and recovery fields
+- [x] Structured JSONL telemetry output with dual-write (engine-local + project-level)
+- [x] Evidence export generating judge-ready Markdown report
+- [x] Docker Compose orchestration with shared volume communication
+- [x] Full Docusaurus documentation site deployed to Vercel
+- [ ] 10 successful verifiable submissions (requires engine execution)
+- [ ] 2 intentional failure runs classified (requires engine execution)
