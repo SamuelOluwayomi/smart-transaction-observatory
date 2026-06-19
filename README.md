@@ -1,64 +1,170 @@
 # Sentry: Smart Transaction Stack
 
-A Solana infrastructure project for the Superteam Nigeria **Advanced Infrastructure Challenge: Build a Smart Transaction Stack** bounty.
+A Solana infrastructure project built for the Superteam Nigeria Advanced Infrastructure Challenge: Build a Smart Transaction Stack bounty.
 
 Sentry is a full-stack transaction operations system. It streams live Solana network state, builds and submits Jito-powered mainnet transactions, tracks each submission through its multi-stage commitment lifecycle, and utilizes an autonomous AI agent to make tip and retry decisions based on network risk.
 
-## Live Demo & Walkthrough
+## Project Resources
 
-Check out the interactive dashboard, execution logs, and landing flow in action:
-
+- **Live Documentation**: [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/)
+- **GitHub Repository**: [https://github.com/SamuelOluwayomi/smart-transaction-observatory](https://github.com/SamuelOluwayomi/smart-transaction-observatory)
 - **Demo Video & Status Update**: [https://x.com/The_devsam/status/2065806306946981923?s=20](https://x.com/The_devsam/status/2065806306946981923?s=20)
 
 ---
 
-## Current Status & Bounty Features
+## Core System Architecture
 
-- **Yellowstone gRPC Integration & Concurrency Design**:
-  - The codebase utilizes a background task to maintain a live connection to the Yellowstone gRPC stream, subscribing to slot updates at the `Processed` commitment level.
-  - Due to standard gRPC infrastructure tier limits (e.g., Solinfra's Ace/Free plans limiting accounts to exactly **1 concurrent gRPC stream**), this single connection is fully dedicated to the live slot stream background task (`run_slot_stream()`).
-  - To prevent stream exhaustion errors from blocking transaction confirmations, the engine is designed with a **robust fallback path**: if a secondary gRPC watcher stream is blocked due to the 1-stream tier limit, the engine automatically falls back to HTTP RPC polling (`getSignatureStatuses`) to track the multi-stage commitment levels (`Processed` -> `Confirmed` -> `Finalized`), ensuring no logs or confirmations are lost.
-- **Multi-Stage Lifecycle Tracking**: The engine polls each commitment level individually (`Processed` -> `Confirmed` -> `Finalized`), recording timestamps and calculating the latency deltas between stages.
-- **Autonomous AI Agent Layer**: A cleanly separated `agent/` module reads the lifecycle log, analyzes Jito tip floors and network congestion, and makes autonomous `submit`/`hold`/`retry` decisions with visible risk reasoning.
-- **Dynamic Tip Selection**: Base tips are selected from the 75th percentile of Jito's live tip floor API, with automatic premiums added by the AI agent during high-latency periods.
-- **Autonomous Retry**: Built-in recovery loops that fetch a fresh blockhash and recalculate tips for expired or failed bundles.
-- **Failure Classification**: Categorizes errors (e.g., `rate_limit_exhausted`, `jito_rejection`, `blockhash_expired`) and provides clear recovery steps.
-- **Verifiable Evidence**: Generates a judge-ready Markdown export with run links, slots, commitment deltas, and AI decisions.
+Sentry consists of four decoupled services orchestrating the transaction pipeline:
+
+1. **Rust Engine** (`engine/`): A high-performance daemon written in Rust. It maintains a persistent Yellowstone gRPC connection to stream slot updates, constructs signed transaction payloads wrapped as Jito bundles, applies base tip calculations, monitors transaction signatures, and logs multi-stage commitment timestamps. It includes an automatic HTTP JSON-RPC polling fallback in case gRPC rate limits are reached.
+2. **AI Agent Daemon** (`agent/`): A standalone Node.js process that monitors the engine's telemetry logs. It analyzes historical latency, Jito tip floors, and network congestion using a local rules engine and a Groq LLM (llama-3.3-70b-versatile) to make autonomous decisions (submit, hold, or retry with tipping premium adjustments).
+3. **Next.js Web Console** (`app/`): A real-time monitoring dashboard served on port 3000. It reads execution logs, tracks wallet balances, displays Jito tip floor percentiles, streams slots via Server-Sent Events (SSE), and hosts an interactive AI documentation assistant.
+4. **Docusaurus Documentation Site** (`docs/`): A developer handbook served on port 3001 and deployed to Vercel. It outlines system architecture, failure classification tables, CLI commands, and features a cross-origin AI Chat assistant that queries Sentry's backend routes.
 
 ---
 
-## Architecture
+## Infrastructure Integrations
 
-Please see the [Architecture Document](ARCHITECTURE.md) for a detailed breakdown of the system components.
+### SolInfra
+
+SolInfra is the primary high-performance infrastructure provider utilized in Sentry. It is configured to run behind a single API key, supplying:
+
+- **Reserved RPC capacity**: Dedicated RPC capacity preventing unexpected public endpoint throttling for critical operations such as blockhash fetching and signature verification.
+- **Yellowstone gRPC streaming**: Sub-millisecond validator event delivery bypassing public mempools.
+- **PAYG Billing Model**: A pay-as-you-go bytes-based billing system that optimizes operational costs.
+
+#### How Sentry Uses SolInfra
+1. **Live Slot Pulse**: The Rust engine opens a gRPC slot subscription at the `Processed` level. These slot notifications are cached in memory to stamp bundle submissions and feed the dashboard's real-time Slot Pulse panel.
+2. **Commitment Lifecycle Telemetry**: Upon submitting a bundle to Jito, the engine opens a gRPC transaction subscription to capture exact timestamps when the transaction hits `Processed`, `Confirmed`, and `Finalized` levels, enabling microsecond-precision latency analytics.
 
 ---
 
-## Testing Modes (Local vs Daemon)
+## Setup & Installation
 
-The project supports two testing workflows for developers:
+### Prerequisites
 
-### Mode A: Web-Only Testing (Local)
+Ensure you have the following toolchains installed:
+- **Node.js**: Version 18 or higher (with npm)
+- **Rust & Cargo**: Stable Rust toolchain
+- **Docker & Docker Compose**: For containerized orchestration
 
-If you want to test the frontend UI buttons, inspect the layouts, or interact with the AI chat model:
+### Environment Configuration
 
-1. Run the Next.js server locally.
-2. Click **Submit Bundle** directly on the dashboard.
-3. The server-side API handler in Node/TS (`lib/observatory.ts`) will build and submit the transaction via Jito's HTTP RPC, and confirm landing using an RPC Polling Fallback loop (`getSignatureStatuses`).
+Create a `.env` file at the root of the project (and copy/link to `engine/.env` where appropriate) containing the following parameters:
 
-### Mode B: Full Infrastructure Daemon (Rust Engine)
+```env
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+SOLANA_WSS_URL=wss://api.mainnet-beta.solana.com
+YELLOWSTONE_ENDPOINT=https://grpc.solinfra.dev
+YELLOWSTONE_TOKEN=your_solinfra_api_key_here
+JITO_BLOCK_ENGINE_URL=https://mainnet.block-engine.jito.wtf
+GROQ_API_KEY=gsk_your_groq_api_key_here
+WALLET_PRIVATE_KEY=[122,94,84,33,...]
+```
 
-To run the full 12-run cycle, verify Yellowstone gRPC stream connectivity, and log the final required lifecycle data:
+*Note: The Next.js dashboard, CLI, and Rust engine resolve `YELLOWSTONE_ENDPOINT` and `YELLOWSTONE_TOKEN` directly for SolInfra's gRPC connection.*
 
-1. Run `cargo run` inside the `engine/` directory.
-2. The Rust daemon maintains a persistent Yellowstone stream connection to catch slot updates.
-3. Transactions are signed and submitted as Jito bundles, and their landing is verified using the Yellowstone gRPC stream (falling back to RPC on stream limits).
-4. The dashboard UI will read from the generated logs and dynamically refresh the tables in real-time.
+### Local Installation & Dev Run
+
+Initialize project packages and link the CLI executable globally:
+
+```bash
+npm install
+npm link
+```
+
+Launch the entire stack (Dashboard, Engine, Agent, and Docs) concurrently:
+
+```bash
+sentry run
+```
+
+---
+
+## Command-Line Interface (`sentry`)
+
+Sentry features a unified command-line utility accessible via `sentry` (after running `npm link`). It supports two execution workflows:
+
+### 1. Interactive REPL Mode
+
+Launch the operator console by running the executable without arguments:
+
+```bash
+sentry
+```
+
+Inside the persistent prompt, enter any command. The prompt returns after executing non-blocking commands, or when blocking daemons are exited using Ctrl+C:
+
+```text
+sentry> status          # Snapshot of live slot, balance, and last runs
+sentry> analyze         # Run mathematical telemetry audits and AI insights
+sentry> ask "why did run 6 fail?"
+sentry> docs            # Starts the Docusaurus documentation site
+sentry> run             # Spins up all 4 pipeline services concurrently
+sentry> exit
+```
+
+### 2. One-Shot Mode
+
+Run commands directly for automation scripts or Docker use:
+
+```bash
+sentry status
+sentry analyze
+sentry evidence
+sentry verify <signature>
+sentry fail-test zero-tip
+sentry fail-test expired-hash
+sentry run --count 10
+sentry docs
+sentry engine
+sentry agent
+sentry dashboard
+sentry docker-up
+```
+
+---
+
+## CLI Command Reference
+
+| Command | Description |
+|---|---|
+| `status` | Print real-time pipeline state (network slot, balance, runs, AI decisions) |
+| `evidence` | Calculate latency statistics and compile a judge-ready markdown verification report |
+| `ask [query]` | Ask the AI agent a question or open an interactive terminal chat session |
+| `analyze` | Generate an autonomous system diagnostic audit report |
+| `verify <sig>` | Audit transaction slot, fee, and memos directly on-chain via RPC |
+| `run [--count N]` | Start all 4 services concurrently (Dashboard, Engine, Agent, Docs) |
+| `fail-test <type>`| Inject failure runs to verify AI classification (`zero-tip` or `expired-hash`) |
+| `engine` | Compile and run the Rust bundle submission engine daemon |
+| `agent` | Run the Node.js AI agent reasoning daemon |
+| `dashboard` | Start the Next.js monitoring dashboard console (Port 3000) |
+| `docs` | Start the Docusaurus documentation site locally (Port 3001) |
+| `docker-up` | Spin up the complete containerized stack via Docker Compose |
+
+---
+
+## Docker Orchestration
+
+The Sentry stack is containerized with Docker. A shared docker volume binds directories to sync logs and agent decisions across containers dynamically.
+
+To start the Docker stack:
+
+```bash
+sentry docker-up
+```
+
+Or run natively:
+
+```bash
+docker compose up --build
+```
+
+The Next.js dashboard will be accessible at `http://localhost:3000`.
 
 ---
 
 ## Bounty Technical Questions
-
-Here are the answers to the three mandatory bounty questions:
 
 ### Q1: What does the delta between processed_at and confirmed_at tell you?
 
@@ -73,176 +179,29 @@ A blockhash remains valid for exactly 150 slots. By using a `Finalized` blockhas
 
 ### Q3: What happens to your bundle if the Jito leader skips their slot?
 
-If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the _next_ available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
+If the targeted Jito leader skips their slot, the Jito Block Engine will drop the bundle, and the transaction will not land in that specific slot. However, because Jito validators make up a large percentage of the network (often back-to-back in the leader schedule), the Jito Block Engine can automatically forward the bundle to the next available Jito leader, provided the transaction's blockhash is still valid. If the blockhash expires during a prolonged sequence of skipped slots or non-Jito leaders, the bundle will ultimately fail and our stack's auto-retry mechanism will kick in to fetch a fresh blockhash.
 
 ---
-
-## What To Use For Jito
-
-Use Jito's Block Engine HTTP JSON-RPC endpoints:
-
-- `getTipAccounts` from `/api/v1/bundles`
-- `sendTransaction` from `/api/v1/transactions`
-- `getInflightBundleStatuses` for short-window lifecycle checks
-- `https://bundles.jito.wtf/api/v1/bundles/tip_floor` for live tip floor data
-
-This project uses `sendTransaction` instead of raw `sendBundle`. Jito accepts the base64-encoded signed Solana transaction, automatically wraps it in a bundle, and returns the transaction signature in the JSON response. The `bundle_id` is captured from the `x-bundle-id` response header.
-
----
-
-## Command-Line Interface (`sentry`)
-
-The project includes a unified, installable CLI binary to orchestrate and inspect the entire Sentry Smart Transaction Stack. It supports two modes:
-
-- **Interactive REPL** — run `sentry` with no arguments to launch a persistent operator console with a `sentry>` prompt
-- **One-shot** — pass a command directly as an argument (e.g. `sentry status`) for scripting or Docker use
-
-### Installation
-
-```bash
-npm link
-```
-
-*Requires Node.js >= 18.*
-
-### Interactive REPL Mode
-
-Launch the persistent console:
-
-```bash
-sentry
-```
-
-You'll land on a `sentry>` prompt with the full command menu displayed. The session stays open until you type `exit` or `quit`:
-
-```
-sentry> status          # snapshot of pipeline state
-sentry> analyze         # deterministic stats + AI insights
-sentry> evidence        # generate judge-ready evidence.md
-sentry> ask "why did run 6 fail?"
-sentry> verify <sig>    # look up a tx on-chain
-sentry> fail-test zero-tip
-sentry> engine          # starts Rust engine (blocks until Ctrl+C)
-sentry> run --count 5   # runs all services (blocks until Ctrl+C)
-sentry> help            # redisplay menu
-sentry> exit
-```
-
-> **Note:** `engine`, `agent`, `dashboard`, `run`, and `docker-up` hand stdio over to the child process and block the prompt until you press Ctrl+C. The REPL resumes automatically once the child exits.
-
-### One-Shot Mode
-
-Pass a command directly — identical output, no interactive prompt:
-
-```bash
-sentry status
-sentry analyze
-sentry evidence
-sentry ask "What is my current tip floor?"
-sentry verify <signature>
-sentry fail-test zero-tip
-sentry fail-test expired-hash
-sentry run --count 10
-sentry engine
-sentry agent
-sentry dashboard
-sentry docker-up
-```
-
-Alternatively, without global installation:
-
-```bash
-npm run cli status
-```
-
----
-
-## Docker Orchestration
-
-The stack is fully containerized using Docker and Docker Compose. This allows you to compile the Rust Engine, launch the AI Agent Daemon, and start the Next.js Web Console with a single command.
-
-A shared Docker volume is used to sync logs and decisions dynamically between the containers, ensuring the services remain decoupled.
-
-To run the containerized stack:
-
-1. Create a `.env` file at the root of the project with your RPC, Jito, and Groq credentials.
-2. Launch the services:
-
-```bash
-# Via CLI
-sentry docker-up
-
-# Or natively via Docker Compose
-docker compose up --build
-```
-
-The Next.js dashboard will be exposed at `http://localhost:3000`.
-
----
-
-## Running The Engine
-
-Create `.env` with the required RPC, Yellowstone, Jito, and wallet values, then run:
-
-```bash
-cd engine
-cargo run
-```
-
-The engine runs the full 12-bundle cycle (10 normal + 2 intentional failures) and writes lifecycle output to:
-
-```text
-engine/lifecycle_log.jsonl
-logs/lifecycle_log.jsonl
-```
-
-## Running The Agent
-
-The AI agent runs as a standalone process, observing the engine's output:
-
-```bash
-cd agent
-npm install
-npm start
-```
-
-## Running The Dashboard
-
-```bash
-npm run dev
-```
-
-Then open the local Next.js URL printed by the dev server.
-
-The dashboard expects these environment variables in `.env` or `engine/.env`:
-
-```text
-SOLANA_RPC_URL=
-WALLET_PRIVATE_KEY=
-JITO_BLOCK_ENGINE_URL=
-GROQ_API_KEY=
-YELLOWSTONE_ENDPOINT=
-YELLOWSTONE_TOKEN=
-```
 
 ## Dashboard APIs
 
-- `GET /api/observatory`: current Solana slot, wallet balance, Jito tip floor, multi-stage lifecycle log summary, and latest AI decision.
-- `POST /api/submit-bundle`: asks the Groq agent for a decision, submits a memo transaction through Jito when the action is not `hold`, polls multi-stage confirmation status, and appends the result to the log.
-- `GET /api/evidence`: exports a Markdown evidence report for bounty submission.
+- `GET /api/observatory`: Returns live network slot, wallet balance, Jito tip percentiles, run logs, and the latest AI decisions.
+- `GET /api/slots/stream`: Server-Sent Events (SSE) route streaming real-time slot and timestamp data.
+- `POST /api/submit-bundle/stream`: Triggers engine run and streams CLI-like progress logs (dynamic tip sizing, signature generation, landing status).
+- `POST /api/docs/chat`: Direct chat router with Groq, configured with CORS support to interface with Vercel-hosted docs.
 
 ---
 
-## Checklist
+## Telemetry Checklist
 
-- [x] Mainnet wallet funded
-- [x] Yellowstone gRPC stream implemented and actively sharing `submit_slot`
-- [x] Jito transaction construction implemented via `sendTransaction`
-- [x] Dynamic tip calculation implemented (p75 with floor/cap)
-- [x] Multi-stage lifecycle tracking implemented (Processed -> Confirmed -> Finalized)
-- [x] AI agent autonomous decision wired into runtime (standalone `agent/` module)
-- [x] Automatic retry with blockhash refresh on failure
-- [x] Public architecture document created (`ARCHITECTURE.md`)
-- [x] Final README technical observations answered (Q1, Q2, Q3)
-- [ ] 10 successful verifiable submissions (Run the engine)
-- [ ] 2 intentional failures logged and classified (Run the engine)
+- [x] Mainnet wallet funded and validated.
+- [x] Yellowstone gRPC stream active and tracking Processed slot intervals.
+- [x] Jito bundle submission executing via JSON-RPC sendTransaction.
+- [x] Dynamic Jito tips referencing 75th percentile floors with caps.
+- [x] Telemetry capturing three-stage commitment levels (Processed, Confirmed, Finalized).
+- [x] Autonomous Node.js AI agent resolving pipeline decisions.
+- [x] Auto-retry blockhash loops active on expired transaction slots.
+- [x] Verified and formatted system architecture document.
+- [x] Bounty question technical audits documented.
+- [ ] 10 successful live runs processed through the Rust engine.
+- [ ] 2 intentional failure runs classified (`zero-tip`, `expired-hash`).
