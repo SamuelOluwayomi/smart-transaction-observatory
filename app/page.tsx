@@ -807,7 +807,7 @@ export default function Home() {
       <header className="sticky top-0 z-30 border-b-2 border-foreground bg-background/82 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="/" className="flex items-center gap-3">
-            <img src="/Sentry.png" alt="Sentry Logo" className="h-12 w-auto invert drop-shadow-sm transition-transform hover:scale-105" />
+            <img src="/Sentry.png" alt="Sentry Logo" className="h-7 w-auto invert drop-shadow-sm transition-transform hover:scale-105" />
           </a>
           <nav className="hidden items-center gap-8 font-mono text-[11px] font-bold uppercase md:flex">
             <a href="#lifecycle">Lifecycle</a>
@@ -1081,19 +1081,37 @@ export default function Home() {
           </section>
 
           <section id="agent" className="metal border-2 border-foreground p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center border-2 border-foreground bg-background shadow-brutal-xs">
-                <Brain size={20} weight="bold" />
-              </span>
-              <div>
-                <p className="font-mono text-[11px] font-black uppercase text-muted">
-                  Agent Decision
-                </p>
-                <h2 className="text-xl font-black uppercase">
-                  Tip Intelligence
-                </h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center border-2 border-foreground bg-background shadow-brutal-xs">
+                  <Brain size={20} weight="bold" />
+                </span>
+                <div>
+                  <p className="font-mono text-[11px] font-black uppercase text-muted">
+                    Agent Decision
+                  </p>
+                  <h2 className="text-xl font-black uppercase">
+                    Tip Intelligence
+                  </h2>
+                </div>
               </div>
+              {/* Reasoning tier badge */}
+              <span
+                className={`border-2 border-foreground px-3 py-1.5 font-mono text-[10px] font-black uppercase ${
+                  snapshot?.agentDecision?.fallback === false
+                    ? "bg-foreground text-background"
+                    : "bg-white/72"
+                }`}
+              >
+                {snapshot?.agentDecision
+                  ? snapshot.agentDecision.fallback
+                    ? "Local Fallback"
+                    : "Groq LLM"
+                  : "Waiting"}
+              </span>
             </div>
+
+            {/* Numbered reasoning steps */}
             <ol className="space-y-2">
               {agentThoughts.map((thought, index) => (
                 <li
@@ -1107,21 +1125,50 @@ export default function Home() {
                 </li>
               ))}
             </ol>
-            <div className="mt-3 grid grid-cols-2 gap-3 font-mono text-[10px] font-black uppercase">
-              <span className="border-2 border-foreground bg-white/72 px-3 py-2">
-                Confidence{" "}
-                {snapshot?.agentDecision
-                  ? `${Math.round(snapshot.agentDecision.confidence * 100)}%`
-                  : "--"}
-              </span>
-              <span className="truncate border-2 border-foreground bg-white/72 px-3 py-2">
-                {snapshot?.agentDecision?.fallback ? "Fallback" : "Groq live"}
-              </span>
+
+            {/* Confidence + model row */}
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-3">
+              <div className="border-2 border-foreground bg-white/72 p-3">
+                <p className="font-mono text-[10px] font-black uppercase text-muted">
+                  Confidence
+                </p>
+                <p className="mt-1 font-mono text-3xl font-black">
+                  {snapshot?.agentDecision
+                    ? `${Math.round(snapshot.agentDecision.confidence * 100)}%`
+                    : "--"}
+                </p>
+              </div>
+              <div className="border-2 border-foreground bg-white/72 p-3 flex flex-col justify-between">
+                <p className="font-mono text-[10px] font-black uppercase text-muted">
+                  Model
+                </p>
+                <p className="mt-1 font-mono text-[11px] font-black uppercase break-all">
+                  {snapshot?.agentDecision?.model ?? "--"}
+                </p>
+              </div>
             </div>
-            <p className="mt-3 border-2 border-foreground bg-white/72 p-3 text-sm leading-6 text-muted">
-              {snapshot?.agentDecision?.observed_risk ??
-                "Submit a bundle to generate the first AI risk assessment."}
-            </p>
+
+            {/* Full agent reason */}
+            <div className="mt-3 border-2 border-foreground bg-white/72 p-3">
+              <p className="font-mono text-[10px] font-black uppercase text-muted mb-1">
+                Reasoning
+              </p>
+              <p className="text-sm leading-6">
+                {snapshot?.agentDecision?.reason ??
+                  "Submit a bundle to generate the first AI decision."}
+              </p>
+            </div>
+
+            {/* Observed risk */}
+            <div className="mt-3 border-2 border-foreground bg-white/72 p-3">
+              <p className="font-mono text-[10px] font-black uppercase text-muted mb-1">
+                Observed Risk
+              </p>
+              <p className="text-sm leading-6 text-muted">
+                {snapshot?.agentDecision?.observed_risk ??
+                  "No risk assessment yet."}
+              </p>
+            </div>
           </section>
         </aside>
       </section>

@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Notify;
 use tracing::{info, warn, error};
 
-/// Shared state between the Yellowstone slot stream and the main submission loop.
+/// Shared state between the RPC slot poller and the main submission loop.
+/// The slot is updated every ~400ms via a background reqwest::Client poll.
+/// The single Ace-plan gRPC stream is reserved for tx confirmation (geyser.rs).
 struct SlotState {
     latest_slot: AtomicU64,
     slot_updated: Notify,
@@ -70,19 +72,15 @@ async fn main() -> Result<()> {
     slot_state.latest_slot.store(initial_slot, Ordering::Relaxed);
     info!("Initial RPC slot: {}", initial_slot);
 
-    // Spawn Yellowstone gRPC slot stream as a background task
-    let ys_state = Arc::clone(&slot_state);
-    let ys_endpoint = config.yellowstone_endpoint.clone();
-    let ys_token = config.yellowstone_token.clone();
+    // Spawn WebSocket-equivalent slot poller as a background task.
+    let ws_state = Arc::clone(&slot_state);
+    let ws_rpc_url = config.solana_rpc_url.clone();
     let _slot_handle = tokio::spawn(async move {
-        info!("Launching Yellowstone slot stream background task...");
-        match run_slot_stream(ys_endpoint, ys_token, ys_state).await {
-            Ok(()) => info!("Yellowstone slot stream ended normally"),
-            Err(e) => warn!("Yellowstone slot stream error (non-fatal): {}", e),
-        }
+        info!("Launching RPC slot poller (gRPC stream reserved for tx confirmation)...");
+        run_rpc_slot_poller(ws_rpc_url, ws_state).await;
     });
 
-    // Brief pause to let slot stream connect (non-blocking to the main loop)
+    // Brief pause to let slot poller initialize (non-blocking to the main loop)
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // ===================================================================
@@ -306,82 +304,40 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Run the Yellowstone gRPC slot stream, updating shared state with each new slot.
-async fn run_slot_stream(
-    endpoint: String,
-    token: String,
-    state: Arc<SlotState>,
-) -> Result<()> {
-    use futures::{SinkExt, StreamExt};
-    use std::collections::HashMap;
-    use yellowstone_grpc_client::GeyserGrpcClient;
-    use yellowstone_grpc_proto::prelude::{
-        subscribe_update::UpdateOneof,
-        CommitmentLevel,
-        SubscribeRequest,
-        SubscribeRequestFilterSlots,
-        SubscribeRequestPing,
-    };
+/// Poll Solana RPC for the current slot every 400ms and update shared state.
+async fn run_rpc_slot_poller(rpc_url: String, state: Arc<SlotState>) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .expect("build reqwest client for slot poller");
 
-    info!("Connecting to Yellowstone at {}", endpoint);
+    info!("RPC slot poller active — polling {} every 400ms", rpc_url);
 
-    let tls_config = tonic::transport::ClientTlsConfig::new().with_webpki_roots();
+    loop {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getSlot",
+            "params": [{ "commitment": "processed" }]
+        });
 
-    let mut client = GeyserGrpcClient::build_from_shared(endpoint)?
-        .x_token(Some(token))?
-        .tls_config(tls_config)?
-        .connect()
-        .await?;
-
-    info!("Connected to Yellowstone gRPC");
-
-    let mut slots_filter = HashMap::new();
-    slots_filter.insert(
-        "client".to_string(),
-        SubscribeRequestFilterSlots {
-            filter_by_commitment: Some(true),
-            interslot_updates: Some(false),
-        },
-    );
-
-    let request = SubscribeRequest {
-        slots: slots_filter,
-        commitment: Some(CommitmentLevel::Processed as i32),
-        ..Default::default()
-    };
-
-    let (mut sink, mut stream) = client.subscribe_with_request(Some(request)).await?;
-
-    info!("Yellowstone slot stream active");
-
-    while let Some(message) = stream.next().await {
-        match message {
-            Ok(msg) => match msg.update_oneof {
-                Some(UpdateOneof::Slot(slot_update)) => {
-                    let old = state.latest_slot.swap(slot_update.slot, Ordering::Relaxed);
-                    if slot_update.slot > old + 5 || old == 0 {
-                        // Log occasionally to avoid noise, but show we are actively streaming
-                        info!("Yellowstone slot: {} (status={:?})", slot_update.slot, slot_update.status);
-                    }
-                    state.slot_updated.notify_waiters();
-                }
-                Some(UpdateOneof::Ping(_)) => {
-                    let ping_request = SubscribeRequest {
-                        ping: Some(SubscribeRequestPing { id: 1 }),
-                        ..Default::default()
-                    };
-                    if let Err(e) = sink.send(ping_request).await {
-                        warn!("Failed to send Yellowstone ping reply: {}", e);
+        match client.post(&rpc_url).json(&body).send().await {
+            Ok(resp) => {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(slot) = json["result"].as_u64() {
+                        let old = state.latest_slot.swap(slot, Ordering::Relaxed);
+                        if slot > old + 5 || old == 0 {
+                            info!("RPC slot poll: {} (was {})", slot, old);
+                        }
+                        state.slot_updated.notify_waiters();
                     }
                 }
-                _ => {}
-            },
+            }
             Err(e) => {
-                error!("Yellowstone stream error: {}", e);
-                break;
+                warn!("RPC slot poll error (non-fatal): {}", e);
             }
         }
-    }
 
-    Ok(())
+        tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+    }
 }

@@ -16,11 +16,16 @@ It consists of three primary components:
 
 The Rust engine (`engine/`) handles the critical path of transaction construction, Jito submission, and on-chain verification.
 
-### Yellowstone gRPC Slot Streaming
+### High-Frequency Slot Polling (RPC)
 
-- A background task maintains a live connection to a Yellowstone gRPC endpoint.
-- It subscribes to slot updates at the `Processed` commitment level.
-- The latest slot is shared via an `Arc<AtomicU64>` with the main submission loop, ensuring every bundle is stamped with the exact network slot at the time of submission (`submit_slot`).
+- To preserve gRPC stream capacity under the SolInfra Ace Plan, slot tracking is performed by a background task that polls the `getSlot` RPC method every 400ms at the `Processed` commitment level.
+- The latest slot is shared via an `Arc<AtomicU64>` and coordinated using `tokio::sync::Notify` to signal slot updates to the dashboard and submission loop. This guarantees that each bundle is stamped with the exact network slot at the time of construction (`submit_slot`).
+
+### Yellowstone gRPC Transaction Confirmation
+
+- A dedicated Yellowstone gRPC client in `geyser.rs` manages transaction landing confirmation using stream subscriptions.
+- After a bundle is submitted, the engine opens a connection to the Yellowstone gRPC server and subscribes to transaction events filtered by the exact transaction signature (`SubscribeRequestFilterTransactions`) at `CommitmentLevel::Confirmed`.
+- This ensures true stream-based landing confirmation without hitting the SolInfra Ace plan's 1 concurrent stream limit, as the slot streaming is handled via RPC polling.
 
 ### Dynamic Tip Calculation
 
@@ -36,8 +41,9 @@ The Rust engine (`engine/`) handles the critical path of transaction constructio
 
 ### Multi-Stage Lifecycle Tracking
 
-- **RPC Polling**: The engine polls `getSignatureStatuses` on the Solana RPC to track the transaction as it progresses through `Processed` -> `Confirmed` -> `Finalized` commitment levels.
-- **Jito Inflight Status**: Concurrently, it polls `getInflightBundleStatuses` on the Jito Block Engine to detect early rejections (e.g., `Failed` or `Invalid`) before they would ever appear on-chain.
+- **Yellowstone gRPC Stream**: Sentry uses the transaction status subscription via gRPC as the primary confirmation path. When a signature confirmation message is received, it records the landed slot and timestamp as `yellowstone_stream`.
+- **RPC Polling**: If the gRPC connection drops, Sentry falls back to polling `getSignatureStatuses` on the Solana RPC as a fallback mechanism (`rpc_polling_fallback`).
+- **Jito Inflight Status**: Concurrently, the engine polls `getInflightBundleStatuses` on the Jito Block Engine to detect early rejections (e.g., `Failed` or `Invalid`) before they would ever appear on-chain.
 - **Latency Deltas**: Timestamps are recorded at each commitment transition, calculating the `Processed -> Confirmed` and `Confirmed -> Finalized` latency deltas.
 
 ### Autonomous Retry & Failure Injection

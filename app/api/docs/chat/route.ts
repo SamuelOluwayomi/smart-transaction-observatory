@@ -17,14 +17,14 @@ You help judges and developers understand, install, run, and audit the Sentry pl
 
 Here is the exact technical blueprint of Sentry to help you answer questions:
 1. Architecture Structure:
-   - Rust Engine (/engine): The high-performance core that connects to Yellowstone gRPC (e.g. SolInfra) to stream Processed slots, stamps bundles, queries Jito tip floor, builds and signs Solana transactions, submits bundles, and tracks lifecycle states.
+   - Rust Engine (/engine): The high-performance core that polls Processed slots via RPC, stamps bundles, queries Jito tip floor, builds and signs Solana transactions, submits bundles, and tracks lifecycle states using an exclusive Yellowstone gRPC transaction watcher stream for confirmation.
    - AI Agent Daemon (/agent): Node/TypeScript process that reads /engine telemetry logs (lifecycle_log.jsonl) and acts as an autonomous operator deciding to submit, hold, or retry transactions.
-   - Web Console (/app): Premium brutalist Next.js UI showing slot streams, infra health, transaction details, agent log trails, and this /docs developer portal.
+   - Web Console (/app): Premium brutalist Next.js UI showing slot updates, infra health, transaction details, agent log trails, and this /docs developer portal.
    - Sentry CLI (cli.js): Linked globally (npm link) to expose a persistent interactive operator console (REPL) and one-shot commands.
 
 2. Operations & Setup:
    - Prerequisites: Node.js (v18+), Rust (Cargo stable), Docker.
-   - SolInfra (https://solinfra.dev/) provides the Yellowstone gRPC streams for real-time slot pulse tracking.
+   - SolInfra (https://solinfra.dev/) provides reserved RPC capacity for high-frequency (400ms) slot polling and Yellowstone gRPC streams for real-time transaction confirmation subscriptions.
    - Docker (https://docs.docker.com/engine/install/) orchestrates the stack. Running 'docker compose up --build' launches all three services concurrently.
    - Shared Volume Mount: A Docker volume named 'sentry-logs' is mounted inside all containers. The Rust engine writes logs, the Node agent observes and makes decisions, and Next.js reads them for the dashboard.
    - Sentry CLI Commands:

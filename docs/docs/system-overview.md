@@ -9,7 +9,8 @@ Sentry is a secure, low latency Solana transaction operations stack. It is engin
 Standard Solana RPC pipelines suffer from lack of landing predictability under high congestion, transaction loss, and delayed lifecycle status visibility. Sentry solves this by bypassing public mempools via Jito, streaming slots directly from high performance gRPC providers, and using an observer agent that acts as an autonomous systems operator.
 
 ### Core Features
-* Yellowstone gRPC streaming of Processed blocks for real-time slot alignment
+* High-frequency RPC polling for real-time slot tracking and alignment
+* Yellowstone gRPC stream subscription for direct transaction confirmation
 * Inflight bundle status tracking via Jito Engine WebSocket and REST endpoints
 * Multi-stage latency diagnostics (Processed → Confirmed → Finalized)
 * Dynamic tip calculations with budget safety limits (30k lamport floor)
@@ -18,23 +19,27 @@ Standard Solana RPC pipelines suffer from lack of landing predictability under h
 
 ## 2. Setup & Installation
 
-### Prerequisites
-To build and run Sentry locally, verify you have the following toolchains installed on your host system:
-* **Node.js**: v18 or higher installed. npm is required for Next.js and the agent.
-* **Rust & Cargo**: Stable toolchain installed. Necessary to build the engine.
-* **Docker Engine**: Recommended for container orchestration.
+Before running the stack, ensure the following tools are installed on your system:
+
+| Tool | Version | Purpose |
+|---|---|---|
+| Node.js | 18+ | Dashboard, Agent, CLI, Docs |
+| Rust + Cargo | Stable | Engine compilation |
+| Docker + Compose | Any recent | Containerized orchestration |
+| protobuf-compiler | Any | Yellowstone gRPC proto compilation |
+
 
 ### Environment Configuration
 Configure your environment by setting up the necessary keys and endpoint parameters. Create a `.env` file in the project root:
 
-```env
+```bash
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_WSS_URL=wss://api.mainnet-beta.solana.com
-YELLOWSTONE_GRPC_URL=https://grpc.solinfra.dev
-YELLOWSTONE_GRPC_TOKEN=your_solinfra_grpc_auth_token
+SOLANA_WS_URL=wss://api.mainnet-beta.solana.com
+YELLOWSTONE_ENDPOINT=https://grpc.solinfra.dev
+YELLOWSTONE_TOKEN=your_solinfra_api_key_here
 JITO_BLOCK_ENGINE_URL=https://mainnet.block-engine.jito.wtf
 GROQ_API_KEY=gsk_your_groq_api_key_here
-ENGINE_PAYER_KEYPAIR=[122,94,84,33,...]
+WALLET_PRIVATE_KEY=[122,94,84,33,...]
 ```
  
 **Infrastructure Providers**

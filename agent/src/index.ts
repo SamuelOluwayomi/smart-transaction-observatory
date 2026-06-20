@@ -1,15 +1,68 @@
 /**
- * Smart TX Observatory -- Autonomous AI Agent
+ * ============================================================================
+ * Smart TX Observatory — Autonomous AI Agent
+ * Superteam Nigeria | Advanced Infrastructure Challenge
+ * ============================================================================
  *
- * This module runs as a standalone process that:
- *   1. Reads the lifecycle log produced by the Rust engine
- *   2. Analyzes recent runs, tip data, and network conditions
- *   3. Makes one of three autonomous decisions: submit, hold, or retry
- *   4. Writes its decision to agent_decisions.jsonl for the dashboard to consume
+ * ARCHITECTURE: TWO-TIER REASONING PIPELINE
+ * ─────────────────────────────────────────
+ * This agent is NOT a sequential wrapper. It implements a two-tier reasoning
+ * pipeline where every operational decision passes through two independent
+ * reasoning layers before being committed to disk:
  *
- * The agent owns the operational decision of tip intelligence and failure reasoning.
- * It does NOT wrap sequential function calls -- it reasons about observed state
- * and produces a justified decision with confidence and risk assessment.
+ *  TIER 1 — Local Rules Engine (deterministic, always runs)
+ *  ─────────────────────────────────────────────────────────
+ *  Reads from lifecycle_log.jsonl, computes metrics over the last 10 runs:
+ *    • landedRate          — ratio of Landed bundles to total submissions
+ *    • avgDeltaMs          — mean Processed→Confirmed latency (congestion signal)
+ *    • failureTypes        — classified failure categories from the Rust engine
+ *    • p75Lamports         — live Jito tip floor 75th percentile
+ *
+ *  Applies a deterministic decision tree:
+ *    • landedRate < 50% + recoverable failures   → action: "retry", tip +30%
+ *    • landedRate < 30% + sustained (≥5 runs)    → action: "hold"
+ *    • avgDeltaMs > 15,000ms (congestion)        → action: "submit", tip +20%
+ *    • landedRate ≥ 90% + sufficient history     → action: "submit", confidence 0.92
+ *    • default                                   → action: "submit", p75 tip
+ *
+ *  Output: a full AgentDecision with action, tip, confidence, reason, observed_risk.
+ *
+ *  TIER 2 — Groq LLM Chain (enhances or overrides the local decision)
+ *  ────────────────────────────────────────────────────────────────────
+ *  The local decision + full observed state are forwarded to a Groq LLM
+ *  (primary: openai/gpt-oss-120b → fallback: llama-3.3-70b-versatile →
+ *   last-resort: llama-3.1-8b-instant) with a structured JSON prompt
+ *  containing:
+ *    • Full observed state (landed rate, tips, latencies, failure types)
+ *    • The local agent's suggestion (for context, not instruction)
+ *    • Hard constraints (never go below p75 floor, 150k lamport cap, etc.)
+ *    • Output contract: action, recommended_tip_lamports, confidence,
+ *      reason, observed_risk (all required, all typed)
+ *
+ *  The LLM REASONS independently — it may agree or disagree with the local
+ *  engine. Its output is validated, bounds-clamped, and written to disk.
+ *
+ *  FALLBACK BEHAVIOUR
+ *  ──────────────────
+ *  If all Groq models fail (network error, rate-limit, malformed JSON), the
+ *  local decision is used with fallback: true. No hardcoded retry flow exists —
+ *  every retry decision originates from the reasoning pipeline above.
+ *
+ *  DECISION OUTPUT CONTRACT
+ *  ────────────────────────
+ *  Written to agent_decisions.jsonl as a newline-delimited JSON record:
+ *  {
+ *    "id":                      string  (UUID v4),
+ *    "created_at":              string  (ISO-8601),
+ *    "model":                   string  ("local-reasoning-engine" | Groq model ID),
+ *    "fallback":                boolean (true if Groq was unavailable),
+ *    "action":                  "submit" | "hold" | "retry",
+ *    "recommended_tip_lamports": number  (30,000 ≤ x ≤ 150,000),
+ *    "confidence":              number  (0.0 – 1.0),
+ *    "reason":                  string  (one sentence, human-readable),
+ *    "observed_risk":           string  (one sentence risk assessment)
+ *  }
+ * ============================================================================
  */
 
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";

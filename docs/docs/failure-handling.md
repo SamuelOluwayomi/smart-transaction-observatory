@@ -15,4 +15,4 @@ sidebar_position: 5
 
 **Error: "Yellowstone stream disconnected"**
 * **Cause**: The gRPC provider rejected the auth token, or the connection timed out.
-* **Solution**: Verify that your gRPC token is valid and active. If your gRPC token is expired, the system will fallback to RPC polling, but slot stamp accuracy will degrade.
+* **Solution**: Verify that your gRPC token is valid and active. If the gRPC connection fails, transaction confirmation will fall back to RPC polling (`rpc_polling_fallback`) without any loss of data.

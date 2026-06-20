@@ -25,11 +25,6 @@ pub struct StreamTxStatus {
     pub err: Option<String>,
 }
 
-/// Watch a single transaction signature using Yellowstone's transaction_status stream.
-///
-/// This gives the lifecycle tracker a gRPC confirmation path instead of relying
-/// only on Solana RPC polling. RPC polling remains a fallback because some free
-/// Yellowstone providers may not enable transaction-status filters.
 pub async fn watch_transaction_status(
     endpoint: String,
     token: String,

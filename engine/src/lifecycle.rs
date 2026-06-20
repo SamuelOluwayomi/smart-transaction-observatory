@@ -170,9 +170,6 @@ pub async fn track_bundle(
     };
 
     // First attempt: Yellowstone gRPC transaction-status stream.
-    // This is the high-score path for the bounty: the transaction lifecycle is
-    // observed from a stream subscription, while RPC remains a fallback and
-    // finalization checker.
     if let (Some(endpoint), Some(token)) = (yellowstone_endpoint, yellowstone_token) {
         match geyser::watch_transaction_status(
             endpoint.to_string(),

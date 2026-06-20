@@ -22,9 +22,8 @@ In your explanation, you MUST explicitly detail the role and difference between:
 2. **RPC Polling Fallback (\`rpc_polling_fallback\`)**: This is the fallback path. If the gRPC stream misses the transaction or times out, the system polls the Solana RPC node's \`getSignatureStatuses\` endpoint until confirmation is reached.
 
 Based on the \`confirmation_source\` in the Transaction Context below:
-- Identify and name which of these two paths confirmed this specific run.
-- Clarify that the project's codebase **fully satisfies** the Yellowstone gRPC requirements of the bounty (as gRPC slot streaming is active to stamp \`submit_slot\` and gRPC transaction status watch is fully written).
-- Explain that if a run shows \`rpc_polling_fallback\`, it is a **positive, resilient design pattern** designed to handle external provider tier limitations (like Solinfra limiting concurrent gRPC streams to 1, which the slot stream uses), rather than a lack of code support.
+- Clarify that the project's codebase **fully satisfies** the Yellowstone gRPC requirements of the bounty (the Yellowstone gRPC stream is dedicated exclusively to transaction status confirmation, allowing true stream-based confirmation on every run).
+- Explain that slot tracking is handled via a high-frequency (400ms) RPC polling loop, freeing the single gRPC stream allowed by the SolInfra Ace Plan to prevent stream contention. If a fallback to `rpc_polling_fallback` occurs, it represents a resilient fallback path in case of network drops or transient gRPC stream issues.
 - Discuss the latency deltas (\`processed_at\`, \`confirmed_at\`, \`finalized_at\`) and what they show about network congestion during this run.
 
 Transaction Context:

@@ -177,8 +177,6 @@ pub async fn build_and_submit_bundle(
     let tx_base64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
 
     // 5. Send via Jito sendTransaction (/api/v1/transactions)
-    //    This is simpler than sendBundle and also creates a bundle internally.
-    //    The bundle_id is returned in the x-bundle-id response header.
     let send_tx_url = format!("{}/api/v1/transactions", jito_url.trim_end_matches('/'));
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -252,8 +250,7 @@ pub async fn build_and_submit_bundle(
             return Ok(fail_run);
         }
 
-        // Success -- for sendTransaction, result is the tx signature (like Solana RPC)
-        // The bundle_id comes from the x-bundle-id header
+        // Success -- for sendTransaction, result is the tx signature
         resp_json = parsed;
         submitted = true;
 
@@ -305,7 +302,6 @@ pub async fn build_and_submit_bundle(
 }
 
 /// Fetch the dynamic tip floor based on Jito's Tip Floor API.
-/// Returns the tip in lamports, floored at 30,000 lamports and capped at 100,000 lamports.
 pub async fn get_dynamic_tip(_rpc_url: &str) -> Result<u64> {
     let client = reqwest::Client::new();
     

@@ -29,21 +29,106 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
 
-/* Invert white logos in light mode */
+/* ─── Logo ──────────────────────────────────────── */
+/* Invert white logo in light mode so it reads dark */
 html[data-theme='light'] .custom-logo {
   filter: invert(1);
 }
 
+/* Keep white logo in dark mode as-is */
+html[data-theme='dark'] .custom-logo {
+  filter: none;
+}
+
 /* Override Docusaurus default 32px logo constraint */
 .navbar__logo {
-  height: 3rem !important;
-  margin-right: 0.5rem;
+  height: 2rem !important;
+  margin-right: 0.35rem;
 }
 
 .navbar__logo img,
 .custom-logo {
-  height: 3rem !important;
-  max-height: 3rem !important;
+  height: 2rem !important;
+  max-height: 2rem !important;
   width: auto !important;
   object-fit: contain !important;
+}
+
+/* ─── Code Blocks ────────────────────────────────── */
+
+/* Outer wrapper */
+.theme-code-block {
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  margin: 1.25rem 0 !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid var(--ifm-color-emphasis-300) !important;
+}
+
+/* Pre/code area */
+.theme-code-block pre {
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 1.1rem 1.25rem !important;
+  font-size: 0.82rem !important;
+  line-height: 1.65 !important;
+}
+
+/* Language label tab above the block */
+.theme-code-block-highlighted-line {
+  display: block;
+  background-color: rgba(255, 255, 0, 0.1);
+  margin: 0 -1.25rem;
+  padding: 0 1.25rem;
+}
+
+/* Copy button */
+.theme-code-block button[class*="copyButton"] {
+  border-radius: 4px !important;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.theme-code-block button[class*="copyButton"]:hover {
+  opacity: 1;
+}
+
+/* Light mode: left accent stripe + warm background */
+html[data-theme='light'] .theme-code-block {
+  border-left: 4px solid #2e8555 !important;
+  background-color: #f9f9fb !important;
+}
+
+html[data-theme='light'] .theme-code-block pre {
+  background-color: #f6f8fa !important;
+}
+
+/* Dark mode: left accent stripe + VS Code-like background */
+html[data-theme='dark'] .theme-code-block {
+  border-left: 4px solid #25c2a0 !important;
+  background-color: #1e1e1e !important;
+}
+
+html[data-theme='dark'] .theme-code-block pre {
+  background-color: #1e1e1e !important;
+}
+
+/* ─── Inline code ────────────────────────────────── */
+html[data-theme='light'] code:not([class*='language-']) {
+  background-color: #e8f4e8;
+  color: #1a6b3c;
+  border: 1px solid #c3dcc3;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.83em;
+  font-weight: 600;
+}
+
+html[data-theme='dark'] code:not([class*='language-']) {
+  background-color: #2a3a2a;
+  color: #7ec8a0;
+  border: 1px solid #3d5c3d;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.83em;
+  font-weight: 600;
 }

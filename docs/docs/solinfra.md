@@ -12,6 +12,21 @@ The platform exposes a unified suite of Solana infrastructure services — RPC, 
 
 > SolInfra's own positioning: *"Reserved RPC, Yellowstone gRPC, parsed transactions, and non-custodial wallets — behind one API key."*
 
+## Sentry's SolInfra Plan
+
+Sentry operates on the **SolInfra Ace plan**, provided by SolInfra as part of the up to $20,000 in infrastructure credits made available to builders during the Superteam Nigeria Advanced Infrastructure Challenge.
+
+| Capability | Ace Plan Allocation |
+|---|---|
+| RPC | 300 requests/sec (dedicated, reserved capacity) |
+| Send Transaction | 300 TX/sec |
+| WebSocket | 2 concurrent connections |
+| gRPC Streams | 1 concurrent stream |
+| Priority Lane | Included |
+| Support | Priority support |
+
+The **Priority Lane** inclusion means all Sentry RPC calls are routed through SolInfra's priority capacity, reducing latency on `getLatestBlockhash`, `getSignatureStatuses`, and `simulateTransaction` calls that are on the critical path of every bundle submission.
+
 ---
 
 ## Services Offered
@@ -42,29 +57,27 @@ gRPC stream consumption is billed on a pay-as-you-go (PAYG) bytes-based model �
 
 ## How SolInfra Powers Sentry
 
-SolInfra is one of the two critical external infrastructure dependencies in Sentry (alongside Jito). It is used directly inside the Rust engine at the gRPC layer for two specific functions:
+SolInfra is one of the two critical external infrastructure dependencies in Sentry (alongside Jito). It is used inside the Rust engine at both the RPC and gRPC layers:
 
-### 1. Live Slot Streaming (Slot Pulse)
+### 1. High-Frequency Slot Polling (Reserved RPC)
 
-The Rust engine opens a persistent Yellowstone gRPC connection to SolInfra on startup. It subscribes to the validator's slot stream at `Processed` commitment level — the earliest possible point at which slot data is available from the network.
+Instead of subscribing to a slot stream via gRPC, Sentry polls the `getSlot` method via SolInfra's reserved RPC endpoint every 400ms. Slots are retrieved at the `Processed` commitment level.
 
-Every time the Solana validator advances to a new slot, the engine's stream receives a notification. The slot number is written atomically into shared memory inside the engine, making it immediately available to:
+Every time the RPC poller detects a slot advancement, the slot number is written atomically into shared memory (`Arc<AtomicU64>`), making it immediately available to:
 
 - The bundle builder, which stamps each bundle submission with the live slot at time of construction.
-- The Next.js API, which polls the slot value and streams it to the live **Slot Pulse** panel on the dashboard.
+- The Next.js API, which polls the slot value and streams it to the live **Slot Pulse** panel on the dashboard via Server-Sent Events.
 - The latency diagnostics module, which uses the submit slot and the landed slot to calculate the `slot delta` — the number of network slots that elapsed between submission and on-chain landing.
 
-This is why Sentry's slot readings arrive in milliseconds rather than the 400–800ms delay that comes with WebSocket polling. The gRPC stream bypasses the intermediate polling layer entirely.
+This offloads slot tracking from the gRPC layer, reserving valuable stream limits for transaction status updates.
 
-### 2. Transaction Status Streaming
+### 2. Transaction Status Streaming (Yellowstone gRPC)
 
-After a bundle is submitted to the Jito Block Engine, the Rust engine simultaneously opens a transaction subscription on SolInfra's Yellowstone stream for the specific transaction signature included in the bundle. This subscription listens directly to the validator network for state transitions:
+After a bundle is submitted to the Jito Block Engine, the Rust engine opens a transaction subscription on SolInfra's Yellowstone stream for the specific transaction signature included in the bundle. This subscription listens directly to the validator network for the `Confirmed` commitment level:
 
-- `Processed` → the transaction has been observed by the validator
 - `Confirmed` → a supermajority of the cluster has confirmed the block
-- `Finalized` → the block is irreversible
 
-Each state transition timestamp is recorded in the lifecycle log (`lifecycle_log.jsonl`). These three timestamps power the multi-stage latency diagnostics visible in Sentry's evidence panel:
+This state transition timestamp is recorded in the lifecycle log (`lifecycle_log.jsonl`). Timestamps for other stages are retrieved via concurrent status tracking:
 
 | Metric | Description |
 |---|---|
@@ -72,19 +85,31 @@ Each state transition timestamp is recorded in the lifecycle log (`lifecycle_log
 | Processed → Confirmed | Time to reach supermajority confirmation |
 | Confirmed → Finalized | Time to reach ledger finality |
 
-Without SolInfra's gRPC subscription capability, resolving all three commitment states would require repeated polling against Solana RPC, introducing artificial delay and making the timing measurements inaccurate.
-
 ---
 
 ## Configuration
 
 To use SolInfra in your own deployment of Sentry, you will need an active SolInfra account and a provisioned API key. Set the following environment variables:
 
-```env
-YELLOWSTONE_GRPC_URL=https://grpc.solinfra.dev
-YELLOWSTONE_GRPC_TOKEN=your_solinfra_api_key_here
+```bash
+YELLOWSTONE_ENDPOINT=https://grpc.solinfra.dev
+YELLOWSTONE_TOKEN=your_solinfra_api_key_here
 ```
 
-The Rust engine reads these at startup and opens the gRPC connection automatically. If the connection drops due to rate limiting or a network interruption, the engine falls back to Solana JSON-RPC polling for slot updates to prevent data loss.
+The Rust engine reads these at startup and opens the gRPC connection automatically.
+
+### gRPC Stream Allocation
+
+The SolInfra Ace plan provides **1 concurrent gRPC stream**. 
+
+To maximize confirmation accuracy and guarantee stream-based landing verification:
+1. **Slot Tracking** is offloaded to a background thread polling SolInfra's reserved RPC endpoint every 400ms.
+2. **Transaction confirmation** has exclusive, uncompeted access to the single allocated gRPC stream.
+
+As a result, Sentry establishes the gRPC transaction watcher stream successfully on every bundle run, logging `confirmation_source: "yellowstone_stream"` rather than falling back to RPC polling. If the stream encounters network drops, Sentry gracefully defaults to RPC `getSignatureStatuses` polling (`rpc_polling_fallback`) to maintain system resilience.
 
 Visit [solinfra.dev](https://solinfra.dev/) to create an account and provision your gRPC endpoint.
+
+import AIAssistant from '@site/src/components/AIAssistant';
+
+<AIAssistant />

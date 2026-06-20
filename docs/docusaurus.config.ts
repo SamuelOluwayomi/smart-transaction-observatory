@@ -71,10 +71,11 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: '',
+      title: 'Sentry',
       logo: {
         alt: 'Sentry Protocol',
-        src: 'img/Sentry.png',
+        src: 'img/Sentry-logo.png',
+        srcDark: 'img/Sentry-logo.png',
         className: 'custom-logo',
       },
       items: [
@@ -107,8 +108,9 @@ const config: Config = {
       copyright: `Copyright © ${new Date().getFullYear()} Sentry Protocol. Built with Docusaurus.`,
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.vsDark,
+      additionalLanguages: ['rust', 'toml', 'bash', 'ini', 'json', 'typescript'],
     },
   } satisfies Preset.ThemeConfig,
 };
