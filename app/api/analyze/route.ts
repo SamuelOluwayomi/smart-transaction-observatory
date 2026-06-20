@@ -23,7 +23,7 @@ In your explanation, you MUST explicitly detail the role and difference between:
 
 Based on the \`confirmation_source\` in the Transaction Context below:
 - Clarify that the project's codebase **fully satisfies** the Yellowstone gRPC requirements of the bounty (the Yellowstone gRPC stream is dedicated exclusively to transaction status confirmation, allowing true stream-based confirmation on every run).
-- Explain that slot tracking is handled via a high-frequency (400ms) RPC polling loop, freeing the single gRPC stream allowed by the SolInfra Ace Plan to prevent stream contention. If a fallback to `rpc_polling_fallback` occurs, it represents a resilient fallback path in case of network drops or transient gRPC stream issues.
+- Explain that slot tracking is handled via a high-frequency (400ms) RPC polling loop, freeing the single gRPC stream allowed by the SolInfra Ace Plan to prevent stream contention. If a fallback to \`rpc_polling_fallback\` occurs, it represents a resilient fallback path in case of network drops or transient gRPC stream issues.
 - Discuss the latency deltas (\`processed_at\`, \`confirmed_at\`, \`finalized_at\`) and what they show about network congestion during this run.
 
 Transaction Context:
