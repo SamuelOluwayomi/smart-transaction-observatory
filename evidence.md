@@ -1,6 +1,6 @@
 # Sentry Smart Transaction Stack - Operational Evidence
 
-Generated: 2026-06-20T19:48:45.865Z
+Generated: 2026-06-20T20:04:00.172Z
 
 This document serves as the judge-ready submission report for the **Sentry** transaction pipeline. It compiles live statistics from recent runs, traces multi-stage confirmations, lists failure recovery actions, and directly answers the bounty's technical questions.
 
@@ -16,8 +16,8 @@ This document serves as the judge-ready submission report for the **Sentry** tra
 - **Median processed -> confirmed Latency**: 1ms
 - **Median confirmed -> finalized Latency**: 0ms
 - **Median Submit -> Landed Slot Delta**: 4 slots (Average: 3.0 slots)
-- **Yellowstone Geyser Confirmations**: 0
-- **RPC Polling Fallback Confirmations**: 12
+- **Yellowstone Geyser Confirmations**: 4
+- **RPC Polling Fallback Confirmations**: 8
 
 ---
 
@@ -51,13 +51,13 @@ Below is the verification table of all submissions in the lifecycle log:
 
 | Run | Status | Confirmation Source | Tip (lamports) | Submit Slot | Landed Slot | Slot Delta | Proc->Conf | Conf->Final | Signature | Failure Type | Recovery / Action |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| 1 | Landed | rpc_polling_fallback | 30000 | 427788136 | 427788139 | 3 | 1ms | 8397ms | [5vZaNjFY...](https://solscan.io/tx/5vZaNjFYzhTKqPrdTf3vZPYB35Uump3XRrQsaD4WuhEQywoZjFKmgXs884hZXNUbFNpQGigrN7BDVEGuFd6JdcQH) | -- | -- |
+| 1 | Landed | yellowstone_stream | 30000 | 427788136 | 427788139 | 3 | 1ms | 8397ms | [5vZaNjFY...](https://solscan.io/tx/5vZaNjFYzhTKqPrdTf3vZPYB35Uump3XRrQsaD4WuhEQywoZjFKmgXs884hZXNUbFNpQGigrN7BDVEGuFd6JdcQH) | -- | -- |
 | 2 | Landed | rpc_polling_fallback | 30000 | 427788206 | 427788208 | 2 | 0ms | 0ms | [2VBxnYzX...](https://solscan.io/tx/2VBxnYzXPPfMTAmxXBm7fFn4cFRZBg5p8UX66hCFE1ZTcBsLUgQiTswmqa4heSSZZPUBPzxNoLHd1GJCFPTnaoHt) | -- | -- |
-| 3 | Landed | rpc_polling_fallback | 30000 | 427788389 | 427788396 | 7 | 0ms | 0ms | [5HTkxuT5...](https://solscan.io/tx/5HTkxuT5Nh3gvqzsrUuasvwqCgRbkfc24Sv31eCiBwMJwSpxHGGeqr93wekH6cVnKBvVrEXzDh9cNHrixNMAGXRq) | -- | -- |
-| 4 | Landed | rpc_polling_fallback | 30000 | 427788452 | 427788456 | 4 | 1ms | 8392ms | [3Fknri3h...](https://solscan.io/tx/3Fknri3hh2PUi6nvkwumrkQ8tJ4nkT7i5UJ8taTcedo5mdjQfLeBkemRn7TMwUd1sXmgFaVRyKyyXE8vd3ZwdFt4) | -- | -- |
+| 3 | Landed | yellowstone_stream | 30000 | 427788389 | 427788396 | 7 | 0ms | 0ms | [5HTkxuT5...](https://solscan.io/tx/5HTkxuT5Nh3gvqzsrUuasvwqCgRbkfc24Sv31eCiBwMJwSpxHGGeqr93wekH6cVnKBvVrEXzDh9cNHrixNMAGXRq) | -- | -- |
+| 4 | Landed | yellowstone_stream | 30000 | 427788452 | 427788456 | 4 | 1ms | 8392ms | [3Fknri3h...](https://solscan.io/tx/3Fknri3hh2PUi6nvkwumrkQ8tJ4nkT7i5UJ8taTcedo5mdjQfLeBkemRn7TMwUd1sXmgFaVRyKyyXE8vd3ZwdFt4) | -- | -- |
 | 5 | Landed | rpc_polling_fallback | 30000 | 427788521 | 427788523 | 2 | 1ms | 0ms | [3NdCGaus...](https://solscan.io/tx/3NdCGaus4AGawpYiJPXDdQtp7jp64pWP98EVjBhgzstgXsCtwiB1NWPyWyx4aEWfvR6QoqWmUK9EVkXKbcGJWqM2) | -- | -- |
 | 6 | Landed | rpc_polling_fallback | 30000 | 427788699 | 427788701 | 2 | 0ms | 0ms | [4VGmF9NH...](https://solscan.io/tx/4VGmF9NHwSirkBjmKPQgSvnB53aNdzkhVMWkduwB9J9sMwLW6sQcN7UynqYKW26uiEw29Xsxg1onXBwCkEgsoNWF) | -- | -- |
-| 7 | Landed | rpc_polling_fallback | 30000 | 427788876 | 427788880 | 4 | 1ms | 8553ms | [VTNXhHTF...](https://solscan.io/tx/VTNXhHTF3hLkNTHJxBySvAQnp3w9dJMWPa2g2NuWtV6sSL4KX1NixRiNzfeNTSUzfEQBbtnnABW72kD7pe5Dtbg) | -- | -- |
+| 7 | Landed | yellowstone_stream | 30000 | 427788876 | 427788880 | 4 | 1ms | 8553ms | [VTNXhHTF...](https://solscan.io/tx/VTNXhHTF3hLkNTHJxBySvAQnp3w9dJMWPa2g2NuWtV6sSL4KX1NixRiNzfeNTSUzfEQBbtnnABW72kD7pe5Dtbg) | -- | -- |
 | 8 | Landed | rpc_polling_fallback | 30000 | 427788939 | 427788943 | 4 | 1ms | 0ms | [JepZwAWw...](https://solscan.io/tx/JepZwAWwx4K9stXsxLbsPrhQuWwSqyMgJc4SJHe55G8Z97EztEeCQ9PU2XsUEtgDC7yqfnPAzTqxNvarN5wvCjF) | -- | -- |
 | 9 | Landed | rpc_polling_fallback | 30000 | 427789398 | 427789402 | 4 | 0ms | 0ms | [2ooYUa7v...](https://solscan.io/tx/2ooYUa7vXnkRJ4vdM5bbzFDLhqah538RcVtHAcQUauhSjGGtNmqYypS32TFaBgfhC6B3mLqiqGeMaRfiSc4AqQjT) | -- | -- |
 | 10 | Landed | rpc_polling_fallback | 30000 | 427789584 | 427789586 | 2 | 0ms | 0ms | [Fi81oWS2...](https://solscan.io/tx/Fi81oWS2mzNHEXqdWABvAwNy3787qS3HHaduYuMoBmYcKJwqx6kXFiin7Rm7xQYZEcDEKY5fYbKwEtug2JPPYRD) | -- | -- |

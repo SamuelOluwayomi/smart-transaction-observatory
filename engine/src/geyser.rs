@@ -20,8 +20,10 @@ pub use yellowstone_grpc_proto::prelude::{
 
 #[derive(Debug, Clone)]
 pub struct StreamTxStatus {
+    #[allow(dead_code)]
     pub signature: String,
     pub slot: u64,
+    #[allow(dead_code)]
     pub observed_at: DateTime<Utc>,
     pub err: Option<String>,
 }
@@ -128,7 +130,8 @@ pub async fn watch_transaction_status_with_ready(
     }
 }
 
-// Keep old function for backward compatibility
+// Kept for backward compatibility with lifecycle.rs
+#[allow(dead_code)]
 pub async fn watch_transaction_status(
     endpoint: String,
     token: String,

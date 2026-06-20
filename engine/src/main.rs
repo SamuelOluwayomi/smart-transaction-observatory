@@ -184,25 +184,38 @@ async fn main() -> Result<()> {
                         watch_handle,
                     ).await;
 
-                    match ys_result {
+                    // Track whether Yellowstone confirmed so we can record it correctly
+                    let yellowstone_confirmed = match ys_result {
                         Ok(Ok(Ok(Some(stream_status)))) => {
                             info!(
                                 "Yellowstone confirmed tx at slot {} err={:?}",
                                 stream_status.slot, stream_status.err
                             );
                             run.submit_slot = run.submit_slot.or(Some(stream_status.slot));
-                            // Fall through to RPC for full commitment levels
+                            run.landed_slot = run.landed_slot.or(Some(stream_status.slot));
+                            // Record that Yellowstone was the confirmation source
+                            run.confirmation_source = Some("yellowstone_stream".to_string());
+                            true
                         }
                         _ => {
                             info!("Yellowstone watch ended, falling back to RPC polling");
+                            false
                         }
-                    }
+                    };
+
+                    // If Yellowstone already confirmed, skip opening a second gRPC stream
+                    // inside track_bundle — just use RPC polling for commitment levels.
+                    let (ys_ep, ys_tok) = if yellowstone_confirmed {
+                        (None, None)
+                    } else {
+                        (Some(config.yellowstone_endpoint.as_str()), Some(config.yellowstone_token.as_str()))
+                    };
 
                     lifecycle::track_bundle(
                         &config.jito_block_engine_url,
                         &config.solana_rpc_url,
-                        Some(&config.yellowstone_endpoint),
-                        Some(&config.yellowstone_token),
+                        ys_ep,
+                        ys_tok,
                         &bid,
                         &mut run,
                         15,
