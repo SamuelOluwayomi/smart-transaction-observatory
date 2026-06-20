@@ -15,7 +15,7 @@ pub enum BundleStatus {
     Failed,
     Invalid,
 }
-
+ 
 impl std::fmt::Display for BundleStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -25,7 +25,7 @@ impl std::fmt::Display for BundleStatus {
             BundleStatus::Failed => write!(f, "Failed"),
             BundleStatus::Invalid => write!(f, "Invalid"),
         }
-    }
+    } 
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,7 +175,7 @@ pub async fn track_bundle(
             endpoint.to_string(),
             token.to_string(),
             run.signature.clone(),
-            25,
+            45,
         )
         .await
         {

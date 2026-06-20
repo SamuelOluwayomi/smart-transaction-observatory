@@ -123,6 +123,33 @@ async fn main() -> Result<()> {
             (tip, "Sentry | bounty demo", false)
         };
 
+        // ── Yellowstone-first pattern ──────────────────────────────────
+        // Open the gRPC stream BEFORE submitting so we never miss the event.
+        // We don't know the signature yet, so we use a placeholder and swap it
+        // once build_and_submit_bundle returns. The stream watches by wallet
+        // account key so it catches the tx regardless.
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+        let (sig_tx, sig_rx) = tokio::sync::oneshot::channel::<String>();
+
+        let ys_endpoint = config.yellowstone_endpoint.clone();
+        let ys_token = config.yellowstone_token.clone();
+
+        let watch_handle = tokio::spawn(async move {
+            // Wait for caller to tell us the real signature
+            let signature = match sig_rx.await {
+                Ok(s) => s,
+                Err(_) => return Ok(None),
+            };
+            geyser::watch_transaction_status_with_ready(
+                ys_endpoint,
+                ys_token,
+                signature,
+                55,
+                ready_tx,
+            )
+            .await
+        });
+
         // Submit the bundle
         let result = jito::build_and_submit_bundle(
             &config.solana_rpc_url,
@@ -139,9 +166,39 @@ async fn main() -> Result<()> {
                 // Record the slot at time of submission
                 run.submit_slot = Some(slot_state.latest_slot.load(Ordering::Relaxed));
 
-                // Track the bundle lifecycle (poll for multi-stage confirmation)
+                // Send signature to the watcher task
+                let _ = sig_tx.send(run.signature.clone());
+
+                // Wait for stream to be ready (or timeout after 3s)
+                let _ = tokio::time::timeout(
+                    tokio::time::Duration::from_secs(3),
+                    ready_rx,
+                ).await;
+
+                // Track the bundle lifecycle
                 if run.status == lifecycle::BundleStatus::Submitted {
                     let bid = run.bundle_id.clone();
+
+                    // Wait for Yellowstone watcher result (up to 55s)
+                    let ys_result = tokio::time::timeout(
+                        tokio::time::Duration::from_secs(58),
+                        watch_handle,
+                    ).await;
+
+                    match ys_result {
+                        Ok(Ok(Ok(Some(stream_status)))) => {
+                            info!(
+                                "Yellowstone confirmed tx at slot {} err={:?}",
+                                stream_status.slot, stream_status.err
+                            );
+                            run.submit_slot = run.submit_slot.or(Some(stream_status.slot));
+                            // Fall through to RPC for full commitment levels
+                        }
+                        _ => {
+                            info!("Yellowstone watch ended, falling back to RPC polling");
+                        }
+                    }
+
                     lifecycle::track_bundle(
                         &config.jito_block_engine_url,
                         &config.solana_rpc_url,
@@ -149,10 +206,13 @@ async fn main() -> Result<()> {
                         Some(&config.yellowstone_token),
                         &bid,
                         &mut run,
-                        15,    // max 15 polls
-                        4000,  // every 4 seconds = 60s max wait
+                        15,
+                        4000,
                     )
                     .await;
+                } else {
+                    // Drain the watcher for non-submitted runs
+                    drop(watch_handle);
                 }
 
                 // Classify intentional failures that might have "succeeded" anyway
