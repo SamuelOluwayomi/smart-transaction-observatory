@@ -8,6 +8,7 @@ Sentry is a full-stack transaction operations system. It streams live Solana net
 
 | Resource | URL |
 |---|---|
+| Live Dashboard (Console) | [https://sentryy.vercel.app/](https://sentryy.vercel.app/) |
 | Live Documentation | [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/) |
 | GitHub Repository | [https://github.com/SamuelOluwayomi/smart-transaction-observatory](https://github.com/SamuelOluwayomi/smart-transaction-observatory) |
 | Demo Video | [https://x.com/The_devsam/status/2065806306946981923](https://x.com/The_devsam/status/2065806306946981923?s=20) |
@@ -94,6 +95,8 @@ After a bundle is submitted, `geyser.rs` opens the Ace-plan gRPC connection to s
 Because slot tracking has been moved to RPC polling, **this gRPC stream has no competitor** — it connects successfully on every run and provides the primary sub-second confirmation path.
 
 When the target signature appears on-chain, the watcher returns a `StreamTxStatus` struct containing the slot, observation timestamp, and any execution errors. If the gRPC connection itself fails (network error, not stream contention), the lifecycle tracker falls back to RPC polling.
+
+Our gRPC client integration is modeled after the official [Yellowstone gRPC Rust Examples](https://github.com/rpcpool/yellowstone-grpc/tree/master/examples/rust), leveraging the `yellowstone-grpc-client` crate to establish low-latency, resilient stream filters.
 
 ### Dynamic Tip Calculation
 
