@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use tracing::{info, warn, error};
 
-use crate::geyser;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum BundleStatus {
@@ -169,60 +169,7 @@ pub async fn track_bundle(
         }
     };
 
-    // First attempt: Yellowstone gRPC transaction-status stream.
-    if let (Some(endpoint), Some(token)) = (yellowstone_endpoint, yellowstone_token) {
-        match geyser::watch_transaction_status(
-            endpoint.to_string(),
-            token.to_string(),
-            run.signature.clone(),
-            45,
-        )
-        .await
-        {
-            Ok(Some(stream_status)) => {
-                run.landed_slot = Some(stream_status.slot);
-                run.processed_at.get_or_insert(stream_status.observed_at);
-
-                if let Some(err) = stream_status.err {
-                    error!(
-                        "Yellowstone stream observed on-chain failure for {}: {}",
-                        stream_status.signature, err
-                    );
-                    run.status = BundleStatus::Failed;
-                    run.error_reason = Some(format!("Yellowstone transaction error: {}", err));
-                    run.classify_failure(
-                        "stream_observed_on_chain_error",
-                        "yellowstone_transaction_status",
-                        "Inspect instruction logs and retry only after fixing the failing instruction",
-                    );
-                    return;
-                }
-
-                run.confirmed_at.get_or_insert(stream_status.observed_at);
-                run.confirmation_source = Some("yellowstone_stream".to_string());
-                run.status = BundleStatus::Landed;
-                run.landed_at = run.confirmed_at;
-                info!(
-                    "Yellowstone stream confirmed transaction {} at slot {}",
-                    stream_status.signature, stream_status.slot
-                );
-            }
-            Ok(None) => {
-                warn!(
-                    "Yellowstone transaction-status stream did not observe {}; falling back to RPC polling",
-                    run.signature
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Yellowstone transaction-status watch error for {}: {}; falling back to RPC polling",
-                    run.signature, e
-                );
-            }
-        }
-    } else {
-        warn!("Yellowstone endpoint/token missing; lifecycle will use RPC polling fallback");
-    }
+    let _ = (yellowstone_endpoint, yellowstone_token); // handled in main.rs
 
     for attempt in 1..=max_polls {
         tokio::time::sleep(tokio::time::Duration::from_millis(poll_interval_ms)).await;

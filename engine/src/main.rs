@@ -12,7 +12,6 @@ use tracing::{info, warn, error};
 
 /// Shared state between the RPC slot poller and the main submission loop.
 /// The slot is updated every ~400ms via a background reqwest::Client poll.
-/// The single Ace-plan gRPC stream is reserved for tx confirmation (geyser.rs).
 struct SlotState {
     latest_slot: AtomicU64,
     slot_updated: Notify,
