@@ -856,59 +856,6 @@ export default function Home() {
             exposes the agent decision trail judges need to verify the system.
           </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button
-              className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-foreground px-5 font-mono text-xs font-black uppercase text-background shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={submitting || loading}
-              onClick={submitBundle}
-            >
-              <Play size={17} weight="fill" />
-              {submitting ? "Submitting" : "Submit Bundle"}
-            </button>
-            <a
-              href="#evidence"
-              className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-white px-5 font-mono text-xs font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal"
-            >
-              <ArrowSquareOut size={17} weight="bold" />
-              View Proof
-            </a>
-            <a
-              href="/api/evidence"
-              className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-white px-5 font-mono text-xs font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal"
-            >
-              <ArrowSquareOut size={17} weight="bold" />
-              Export Evidence
-            </a>
-          </div>
-          <div
-            className={`mt-4 border-2 border-foreground bg-white/82 p-3 font-mono text-[11px] font-black uppercase transition ${
-              submitting ? "shadow-brutal-sm" : ""
-            }`}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span>
-                {submitting
-                  ? "Execution stream running"
-                  : "Terminal ready below"}
-              </span>
-              <button
-                className="border-2 border-foreground bg-foreground px-3 py-2 text-background"
-                onClick={() =>
-                  terminalRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  })
-                }
-              >
-                View Terminal
-              </button>
-            </div>
-            <p className="mt-2 truncate text-[10px] text-muted">
-              {terminalLines.at(-1)?.message ??
-                "Submit a bundle to stream the full transaction lifecycle."}
-            </p>
-          </div>
-
           <section className="mt-8 border-2 border-foreground bg-white/78 p-4 backdrop-blur">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -949,7 +896,61 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-foreground px-5 font-mono text-xs font-black uppercase text-background shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={submitting || loading}
+                onClick={submitBundle}
+              >
+                <Play size={17} weight="fill" />
+                {submitting ? "Submitting" : "Submit Bundle"}
+              </button>
+              <a
+                href="#evidence"
+                className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-white px-5 font-mono text-xs font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal"
+              >
+                <ArrowSquareOut size={17} weight="bold" />
+                View Proof
+              </a>
+              <a
+                href="/api/evidence"
+                className="inline-flex h-12 items-center gap-2 border-2 border-foreground bg-white px-5 font-mono text-xs font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:shadow-brutal"
+              >
+                <ArrowSquareOut size={17} weight="bold" />
+                Export Evidence
+              </a>
+            </div>
           </section>
+
+          <div
+            className={`mt-4 border-2 border-foreground bg-white/82 p-3 font-mono text-[11px] font-black uppercase transition ${
+              submitting ? "shadow-brutal-sm" : ""
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {submitting
+                  ? "Execution stream running"
+                  : "Terminal ready below"}
+              </span>
+              <button
+                className="border-2 border-foreground bg-foreground px-3 py-2 text-background"
+                onClick={() =>
+                  terminalRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  })
+                }
+              >
+                View Terminal
+              </button>
+            </div>
+            <p className="mt-2 truncate text-[10px] text-muted">
+              {terminalLines.at(-1)?.message ??
+                "Submit a bundle to stream the full transaction lifecycle."}
+            </p>
+          </div>
 
           <div className="mt-12 grid gap-[2px] border-2 border-foreground bg-foreground grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shadow-brutal-sm">
             {metrics.map((metric) => (
