@@ -10,8 +10,8 @@ Sentry is a full-stack transaction operations system. It streams live Solana net
 |---|---|
 | Live Dashboard (Console) | [https://sentryy.vercel.app/](https://sentryy.vercel.app/) |
 | Live Documentation | [https://sentry-doc.vercel.app/](https://sentry-doc.vercel.app/) |
-| GitHub Repository | [https://github.com/SamuelOluwayomi/smart-transaction-observatory](https://github.com/SamuelOluwayomi/smart-transaction-observatory) |
-| Demo Video | [https://x.com/The_devsam/status/2065806306946981923](https://x.com/The_devsam/status/2065806306946981923?s=20) |
+| Architecture Design Document (Notion) | [Public Notion Page](https://your-notion-link-here) (or local [ARCHITECTURE.md](./ARCHITECTURE.md)) |
+| Operational Evidence Report | [evidence.md](./evidence.md) (12 bundle runs, latency percentiles, AI recommendations) |
 
 ---
 
