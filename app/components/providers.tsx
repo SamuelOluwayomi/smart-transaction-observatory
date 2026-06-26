@@ -6,7 +6,7 @@ import { PropsWithChildren } from "react";
 import { autoDiscover, createClient } from "@solana/client";
 
 const client = createClient({
-  endpoint: "https://api.devnet.solana.com",
+  endpoint: "https://api.mainnet-beta.solana.com",
   walletConnectors: autoDiscover(),
 });
 
