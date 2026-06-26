@@ -99,9 +99,14 @@ async fn main() -> Result<()> {
         info!("Bundle Run {}/{}", run_num, total_runs);
         info!("---------------------------------------------");
 
-        // Log the current slot from Yellowstone (or RPC fallback)
+        // Log the current slot from the RPC poller
         let current_slot = slot_state.latest_slot.load(Ordering::Relaxed);
         info!("Current observed slot: {}", current_slot);
+
+        // Gate submission on leader window proximity.
+        // Hold until we are within 2 slots of the nearest Jito leader.
+        // This is a best-effort check — if no schedule is available we proceed immediately.
+        wait_for_leader_window(Arc::clone(&slot_state), &config.jito_block_engine_url).await;
 
         // Determine tip and failure injection
         let (tip_lamports, memo_text, intentional_failure) = if std::env::var("FAIL_TEST").as_deref() == Ok("zero-tip") {
@@ -411,5 +416,87 @@ async fn run_rpc_slot_poller(rpc_url: String, state: Arc<SlotState>) {
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+    }
+}
+
+/// Hold submission until the current slot is within 2 slots of the nearest
+/// Jito leader slot, then return immediately.
+///
+/// Strategy: query the Jito block engine's `/api/v1/bundles/leader_schedule`
+/// endpoint for the upcoming leader schedule, find the nearest slot >= current,
+/// and sleep one slot (400ms) until `leader_slot - current_slot <= 2`.
+///
+/// If the schedule fetch fails or returns no data, this function returns
+/// immediately so the submission path is never blocked indefinitely.
+async fn wait_for_leader_window(slot_state: Arc<SlotState>, jito_url: &str) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    // Fetch upcoming Jito leader schedule.
+    let schedule_url = format!(
+        "{}/api/v1/bundles/leader_schedule",
+        jito_url.trim_end_matches('/')
+    );
+
+    let leader_slots: Vec<u64> = match client.get(&schedule_url).send().await {
+        Ok(resp) => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(json) => {
+                    // Response is typically { "result": [slot, slot, ...] }
+                    json.get("result")
+                        .or_else(|| json.as_array().map(|_| &json))
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|s| s.as_u64())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                }
+                Err(_) => vec![],
+            }
+        }
+        Err(_) => vec![],
+    };
+
+    if leader_slots.is_empty() {
+        // No schedule available — proceed immediately (non-blocking fallback)
+        return;
+    }
+
+    let mut wait_logged = false;
+    loop {
+        let current = slot_state.latest_slot.load(Ordering::Relaxed);
+        let nearest = leader_slots.iter().filter(|&&s| s >= current).min().copied();
+
+        match nearest {
+            Some(leader_slot) => {
+                let distance = leader_slot.saturating_sub(current);
+                if distance <= 2 {
+                    if wait_logged {
+                        info!(
+                            "Leader window open: current={} leader={} distance={} ≤2 — submitting now",
+                            current, leader_slot, distance
+                        );
+                    }
+                    return; // within window, safe to submit
+                }
+                if !wait_logged {
+                    info!(
+                        "Waiting for leader window: current={} leader={} distance={} slots",
+                        current, leader_slot, distance
+                    );
+                    wait_logged = true;
+                }
+                // Sleep one slot and re-check
+                tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+            }
+            None => {
+                // All scheduled leader slots are in the past — proceed
+                return;
+            }
+        }
     }
 }
