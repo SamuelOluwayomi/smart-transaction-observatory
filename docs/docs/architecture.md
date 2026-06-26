@@ -67,7 +67,28 @@ The Rust Engine is the core high-performance execution layer, written in Rust fo
 * **`config.rs`**: Decodes and loads environment configurations via `dotenv`, validating wallet balance requirements (minimum 50,000 lamports enforced on startup).
 * **`geyser.rs`**: Configures the Yellowstone gRPC client. Opens a gRPC subscription request filtered by the operator's wallet `account_include` address, using a Tokio `oneshot` synchronization channel to notify when the stream handshake is complete.
 * **`jito.rs`**: Fetches active Jito validator accounts via `getTipAccounts`, queries Jito's dynamic tip floor API, simulates transactions locally, constructs the memo + tip bundle, and serializes the signed transaction in base64.
+* **`jito.rs`**: Fetches active Jito validator accounts via `getTipAccounts`, queries Jito's dynamic tip floor API, simulates transactions locally, constructs the memo + tip bundle, serializes the signed transaction in base64, and dispatches to **5 regional block engines in parallel** via `dispatch_to_all_regions()`.
 * **`lifecycle.rs`**: Implements the multi-stage confirmation poller (`track_bundle`), polling Solana RPC `getSignatureStatuses` and Jito `getInflightBundleStatuses` concurrently to record execution timestamps.
+
+### 2.4 Leader Window Gating
+
+Before constructing or submitting a bundle, the engine calls `wait_for_leader_window()` which fetches the upcoming Jito leader schedule and holds submission until the current slot is within 2 slots of the nearest Jito leader (`leaderDistanceSlots ≤ 2`). This maximises the probability that the bundle arrives at the block engine's auction queue during the active leader's window, rather than being forwarded across slot boundaries.
+
+If the Jito leader schedule endpoint returns no data (network error, empty response), the function returns immediately and submission proceeds without blocking.
+
+### 2.5 Multi-Region Parallel Dispatch
+
+Bundles are dispatched simultaneously to all 5 regional Jito block engines using `dispatch_to_all_regions()`. All requests fire concurrently; the first region to return a success response wins, and the rest are discarded.
+
+| Region | Endpoint |
+|---|---|
+| Global | `mainnet.block-engine.jito.wtf` |
+| New York | `ny.mainnet.block-engine.jito.wtf` |
+| Amsterdam | `amsterdam.mainnet.block-engine.jito.wtf` |
+| Frankfurt | `frankfurt.mainnet.block-engine.jito.wtf` |
+| Tokyo | `tokyo.mainnet.block-engine.jito.wtf` |
+
+This materially reduces slot-auction miss rate when the current Jito leader is in a non-primary region. The winning region is logged for every run.
 
 ### 2.2 AI Agent Layer (`agent/`)
 An autonomous background observer written in Node.js/TypeScript.
@@ -165,6 +186,31 @@ gRPC handshakes and filter propagation take 1 to 3 seconds over TLS. If a Jito b
 ### 4.4 Regional Network Advantage: AMS vs NYC/FRA
 During on-chain testing, telemetry revealed that deploying Sentry near **Amsterdam (AMS)** yielded significantly lower Yellowstone transaction observation latencies compared to New York (NYC) or Frankfurt (FRA). This regional speed advantage minimizes the window between `Processed` and `Confirmed` blocks and ensures gRPC streams connect faster.
 
+### 4.5 Dynamic Tip Formula
+
+The tip for every bundle is calculated as:
+
+```
+final_tip = max(FLOOR, p75_lamports).min(CAP)
+```
+
+- **FLOOR = 30,000 lamports** — empirically proven mainnet minimum. The Jito public tip API consistently underreports market-clearing prices (reporting medians of 1k–5k lamports while sub-30k tips land unreliably).
+- **CAP = 100,000 lamports** — budget protection ceiling.
+- **p75_lamports** — live `landed_tips_75th_percentile` from the Jito tip floor API, converted to lamports.
+- On AI-directed retries, the agent outputs a `tipAdjustmentFactor` and the engine applies: `new_tip = min(current_tip × factor, CAP)`.
+
+No tip value is hardcoded in the normal submission path — the live API drives every decision.
+
+### 4.6 Bundle UUID Does Not Mean On-Chain Inclusion
+
+Jito's block engine returns an HTTP 200 with an `x-bundle-id` UUID for **every** submitted bundle — including bundles that lose the slot auction or fail simulation. A UUID cannot be interpreted as confirmation of inclusion.
+
+Sentry resolves this with concurrent post-submission monitoring:
+- **`getInflightBundleStatuses`** (Jito side): Detects early rejections (`Failed`, `Invalid`) and surfaces the real rejection reason before the transaction would appear on-chain.
+- **`getSignatureStatuses`** (Solana RPC): The authoritative source. Confirmation here means the bundle is genuinely on-chain.
+
+A bundle confirmed by neither source within 45 seconds is classified as `BUNDLE_FAILURE` and escalated to the AI agent.
+
 ---
 
 ## 5. Failure Handling Strategy
@@ -207,7 +253,22 @@ If the primary LLM model fails, the agent automatically attempts connection to f
 
 ---
 
-## 7. Memory Management & Leak Prevention
+## 7. Operational Learnings (Mainnet)
+
+These insights come from running the full stack against Solana mainnet and represent the difference between a stack that works in theory and one that works in production.
+
+| Learning | Detail |
+|---|---|
+| **UUID ≠ Inclusion** | Jito returns a UUID for every bundle, including ones that lose the slot auction. Without `getInflightBundleStatuses`, a rejected bundle looks identical to a pending one. |
+| **Tip API underreports** | Public tip API medians (1k–5k lamports) don't reflect real landing cost. Empirical mainnet floor is 30,000 lamports for self-transfer payloads. |
+| **gRPC stream is a finite resource** | SolInfra Ace allows one concurrent subscribe stream. Using it for both slot tracking and tx confirmation causes contention. Reserve it for confirmation; use RPC for slots. |
+| **`confirmed` blockhash is non-negotiable** | A `finalized` blockhash consumes ~20% of the 150-slot validity window before signing. Always fetch at `confirmed` commitment. |
+| **Inline-tip bundles only** | Separate `addTipTx()` bundle patterns were accepted (UUID returned) but never appeared on-chain. Single-transaction inline-tip bundles are the only reliable pattern. |
+| **Fault injection proves the loop** | `Hash::default()` and 0-lamport tips produce real on-chain rejections, not synthetic exceptions. The full detect → classify → reason → decide → retry loop is validated end-to-end. |
+
+---
+
+## 8. Memory Management & Leak Prevention
 
 * **Atomic Registers**: Sentry uses a lock-free `AtomicU64` register for slots, ensuring the latest slot update simply overwrites the old value, preventing slot queue memory build-ups.
 * **Periodic Cleanup**: In the Next.js console backend, the `TransactionTracker` maintains a 5-minute cleanup interval using `setInterval().unref()` to prune unconfirmed signatures from memory, preventing memory leaks in long-running dashboard processes.
