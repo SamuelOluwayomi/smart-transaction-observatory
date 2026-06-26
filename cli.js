@@ -75,19 +75,19 @@ function commandExists(cmd) {
 function printHeader() {
   const c = colors;
   console.log('');
-  console.log(`${c.magenta}╔═══════════════════════════════════════════════════════════════╗${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}                                                               ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}███████╣███████╣███╝  ██╗████████╣██████╗ ██╗   ██╗${c.reset}   ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}██╔════╝██╔════╝████╝ ██║╚══██╔══╝██╔══██╗╚██╝ ██╔╝${c.reset}   ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}███████╣█████╣  ██╔██╝██║   ██║   ██████╔╝ ╚████╔╝ ${c.reset}   ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}╚════██║██╔══╝  ██║╚████║   ██║   ██╔══██╗  ╚██╔╝  ${c.reset}   ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}███████║███████╣██║ ╚███║   ██║   ██║  ██║   ██║   ${c.reset}   ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.cyan}╚══════╝╚══════╝╚═╝  ╚══╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ${c.reset}  ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}                                                               ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.bold}${c.white}Smart Transaction Stack${c.reset} ${c.dim}— Advanced Infrastructure Challenge${c.reset}  ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}                                                               ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}║${c.reset}  ${c.dim}             Superteam Nigeria  •  Solana Mainnet${c.reset}           ${c.magenta}║${c.reset}`);
-  console.log(`${c.magenta}╚═══════════════════════════════════════════════════════════════╝${c.reset}`);
+  console.log(`${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}                                                               ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}███████╣███████╣███╝  ██╗████████╣██████╗ ██╗   ██╗${c.reset}   ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}██╔════╝██╔════╝████╝ ██║╚══██╔══╝██╔══██╗╚██╝ ██╔╝${c.reset}   ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}███████╣█████╣  ██╔██╝██║   ██║   ██████╔╝ ╚████╔╝ ${c.reset}   ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}╚════██║██╔══╝  ██║╚████║   ██║   ██╔══██╗  ╚██╔╝  ${c.reset}   ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}███████║███████╣██║ ╚███║   ██║   ██║  ██║   ██║   ${c.reset}   ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.cyan}╚══════╝╚══════╝╚═╝  ╚══╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ${c.reset}  ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}                                                               ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.bold}${c.white}Smart Transaction Stack${c.reset} ${c.dim}— Advanced Infrastructure Challenge${c.reset}  ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}                                                               ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}  ${c.dim}             Superteam Nigeria  •  Solana Mainnet${c.reset}           ${c.magenta}${c.reset}`);
+  console.log(`${c.magenta}${c.reset}`);
   console.log('');
 }
 
