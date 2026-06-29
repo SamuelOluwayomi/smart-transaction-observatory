@@ -108,6 +108,9 @@ function showHelp() {
   console.log(`  ${colors.green}agent${colors.reset}                    Run the AI agent reasoning daemon`);
   console.log(`  ${colors.green}dashboard${colors.reset}                Start Next.js dashboard console`);
   console.log(`  ${colors.green}docs${colors.reset}                     Start Docusaurus documentation site`);
+  console.log("\nDeveloper Integration Commands:");
+  console.log(`  ${colors.green}serve${colors.reset}                    Start standalone developer API server`);
+  console.log(`  ${colors.green}harness <type>${colors.reset}            Run a mainnet test harness (faults|trader|requote|sniper|budget|mev)`);
   console.log("\nDocker Integration Commands:");
   console.log(`  ${colors.green}docker-up${colors.reset}                Spin up the complete containerized stack via Docker Compose`);
   console.log("");
@@ -916,12 +919,33 @@ function runAll(runCount) {
   startService("docs", "npm", ["run", "start", "--", "--port", "3001"], colors.yellow, path.join(projectRoot, "docs"));
 }
 
+function runServe() {
+  console.log(`${colors.green}Running Standalone Developer Server on http://localhost:3050... (Ctrl+C to stop)${colors.reset}`);
+  const child = spawn("npx", ["tsx", "server.ts"], { cwd: projectRoot, stdio: "inherit", shell: true });
+  child.on("close", code => {
+    console.log(`\n${colors.green}[server]${colors.reset} Exited with code ${code}. Back at sentry> prompt.`);
+  });
+}
+
+function runHarness(type) {
+  const allowed = ["faults", "trader", "requote", "sniper", "budget", "mev"];
+  if (!type || !allowed.includes(type)) {
+    console.error(`${colors.red}Error: Invalid harness type. Use one of: ${allowed.join(", ")}${colors.reset}`);
+    return;
+  }
+  console.log(`${colors.green}Running Test Harness: ${type}... (Ctrl+C to stop)${colors.reset}`);
+  const child = spawn("npx", ["tsx", `scripts/harnesses/harness_${type}.ts`], { cwd: projectRoot, stdio: "inherit", shell: true });
+  child.on("close", code => {
+    console.log(`\n${colors.green}[harness:${type}]${colors.reset} Exited with code ${code}. Back at sentry> prompt.`);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // REPL + Dispatch
 // ---------------------------------------------------------------------------
 
 // Blocking commands that hand over stdio to a child process
-const BLOCKING_COMMANDS = new Set(["engine", "agent", "dashboard", "docker-up", "run", "docs"]);
+const BLOCKING_COMMANDS = new Set(["engine", "agent", "dashboard", "docker-up", "run", "docs", "serve", "harness"]);
 
 async function dispatch(cmd, parts, isRepl = false) {
   switch (cmd) {
@@ -929,6 +953,16 @@ async function dispatch(cmd, parts, isRepl = false) {
     case "--help":
     case "-h":
       isRepl ? showReplMenu() : showHelp();
+      break;
+
+    case "serve":
+      if (isRepl) console.log(`${colors.dim}Tip: serve runs in the foreground. Press Ctrl+C to stop it.${colors.reset}`);
+      runServe();
+      break;
+
+    case "harness":
+      if (isRepl) console.log(`${colors.dim}Tip: harness runs in the foreground. Press Ctrl+C to stop it.${colors.reset}`);
+      runHarness(parts[1]);
       break;
 
     case "status":
@@ -1021,6 +1055,8 @@ ${colors.bold}Available commands:${colors.reset}`);
   console.log(`  ${colors.green}agent${colors.reset}                run the AI agent daemon`);
   console.log(`  ${colors.green}dashboard${colors.reset}            start the Next.js dashboard`);
   console.log(`  ${colors.green}docs${colors.reset}                 start the Docusaurus site`);
+  console.log(`  ${colors.green}serve${colors.reset}                start the standalone developer API server`);
+  console.log(`  ${colors.green}harness <type>${colors.reset}        run a test harness (faults|trader|requote|sniper|budget|mev)`);
   console.log(`  ${colors.green}run [--count N]${colors.reset}      start all services concurrently`);
   console.log(`  ${colors.green}docker-up${colors.reset}            launch the full Docker stack`);
   console.log(`  ${colors.green}help${colors.reset}                 show this menu again`);

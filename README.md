@@ -373,7 +373,82 @@ sentry <command> [args]
 | `agent` | Run the AI agent daemon in isolation (`npm run start` in `agent/`). | Yes |
 | `dashboard` | Start the Next.js development server (`npm run dev` in project root). | Yes |
 | `docs` | Start the Docusaurus development server on port 3001 (`npm run start -- --port 3001` in `docs/`). | Yes |
+| `serve` | Start the standalone developer HTTP API server on port 3050 (`npx tsx server.ts` in project root). | Yes |
+| `harness <type>` | Run a mainnet validation test harness. Types: `faults`, `trader`, `requote`, `sniper`, `budget`, `mev`. | Yes |
 | `docker-up` | Run `docker-compose up --build` from the project root. | Yes |
+
+---
+
+## 5a. Programmatic SDK & Standalone REST API
+
+To support external integrations into DEX aggregators, snipers, and minters, Sentry can be run as a programmatic TypeScript SDK or a standalone REST API.
+
+### Sentry TypeScript SDK
+
+Import the SDK class directly in your Node/TS codebase:
+
+```typescript
+import { Sentry } from "./lib/sentry-sdk";
+
+const sentry = new Sentry();
+await sentry.start(); // verify RPC connectivity and fund balance
+
+// Submit instructions, Transactions, VersionedTransactions, or base64 strings:
+const result = await sentry.submit([myInstruction], { urgency: "high" });
+if (result.success) {
+  console.log(`Landed bundle! Slot: ${result.slot}, Signature: ${result.signature}`);
+}
+```
+
+The SDK handles:
+- Dynamic Jito tip fetching based on the live 75th percentile.
+- Simulation checks via Solana RPC before Jito entry.
+- Yellowstone gRPC stream-based signature tracking.
+- **Multi-Transaction Bundling for Pre-Signed inputs**: If you pass a pre-signed transaction, Sentry automatically constructs a Jito bundle combining the pre-signed transaction with a separate tip transfer transaction signed by Sentry, allowing Jito execution without breaking the original transaction signature.
+
+### Standalone REST API Server
+
+Run a local REST API gateway:
+```bash
+npm run server
+```
+
+- **`GET /health`**: Uptime and REST API resource status check.
+- **`POST /submit`**: Accepts JSON payloads:
+  ```json
+  {
+    "transaction": "<base64-serialized-tx>",
+    "urgency": "low" | "medium" | "high"
+  }
+  ```
+  It returns the landing status and full execution log.
+
+---
+
+## 5b. Mainnet Test Harnesses
+
+We created 6 mainnet-active verification test harnesses in `scripts/harnesses/` to validate Sentry's features against live blockchain conditions. Each harness features visual console formatting and typewriter AI logging:
+
+1. **Injected Fault Harness (`npm run harness:faults`)**:
+   Runs 4 scenarios: happy path transfer (using a 1,000-lamport self-transfer to safely bypass Solana rent-exemption floors), low tip validation (recommends tip increase), stale blockhash (refreshes and retries), and impossible transfer (aborts simulation/hold).
+2. **Trader Harness (`npm run harness:trader`)**:
+   Executes swap scenarios showing Sentry handling stale quotes, slippage limits, leader skips, and launch-day traffic congestion.
+3. **Re-quote Harness (`npm run harness:requote`)**:
+   Demonstrates Sentry's ability to recover from pool price volatility by re-quoting swap instructions, re-signing, and resubmitting instead of throwing error codes.
+4. **Sniper Harness (`npm run harness:sniper`)**:
+   Simulates launch sniping: detects liquidity pool initialization, pulls swap quotes, dynamic tips, and submits in +1 slot delta.
+5. **Budget Harness (`npm run harness:budget`)**:
+   Forces adaptive AI tipping limits based on a strict session-capped budget allowance.
+6. **MEV Protection Harness (`npm run harness:mev`)**:
+   Prints a side-by-side comparison of swap outputs on the public mempool (subject to frontrun/backrun sandwiching) vs. Sentry's private bundle execution.
+
+### Harness Execution Verification
+
+Here is the verified terminal execution of `npm run harness:faults` running on Solana Mainnet:
+
+![Sentry Mainnet Fault Harness Run](file:///C:/Users/SAMUEL/.gemini/antigravity-ide/brain/da7b9f15-e1a4-45c0-bc9c-c15635a5a02e/media__1782760498830.png)
+
+Every action, recommended tip, and classification is written asynchronously by the AI agent to the local [agent_decisions.jsonl](file:///Ubuntu/home/samuel/smart-tx-observatory/agent_decisions.jsonl) decision registry.
 
 ---
 

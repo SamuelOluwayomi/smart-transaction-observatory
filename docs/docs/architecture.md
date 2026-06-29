@@ -292,3 +292,64 @@ These insights come from running the full stack against Solana mainnet and repre
 * `@solana/web3.js` (^1.98.4): Mainnet Solana library (locked for Jito compatibility).
 * `ws` (^8.18.3): Server-Sent Events (SSE) websocket communication.
 * `tsx` (^4.19.0): Low-overhead execution wrapper for the agent daemon.
+
+---
+
+## 9. Programmatic SDK & Standalone Server
+
+To support integration into external dApps, searchers, or trading bots, Sentry includes a programmatic SDK and a standalone REST API server.
+
+### 9.1 Programmatic TypeScript SDK (`lib/sentry-sdk.ts`)
+
+Developers can import Sentry directly to execute transactions via the Jito Block Engine pipeline with built-in telemetry:
+
+```typescript
+import { Sentry } from "./lib/sentry-sdk";
+
+const sentry = new Sentry();
+await sentry.start(); // Warmed up Node & RPC connections
+
+const result = await sentry.submit([myInstruction], { urgency: "medium" });
+if (result.success) {
+  console.log(`Landed transaction at slot ${result.slot}: ${result.signature}`);
+}
+```
+
+The SDK accepts the following inputs:
+- `TransactionInstruction[]`: Auto-appends the tip instruction, fetches latest blockhash, signs, simulates, and submits.
+- `Transaction` / `VersionedTransaction` (unsigned): Automatically signs, simulates, and submits.
+- `Pre-signed Transaction`: Submits as-is. If the input is pre-signed, Sentry automatically constructs a **Multi-Transaction Bundle** combining the user's transaction with a separate tip payment transaction, allowing tip integration without invalidating the pre-existing user signature.
+- `Base64 / Base58 String`: Deserializes the transaction and routes as above.
+
+> **Local Signature Derivation**: The SDK derives transaction signatures locally and formats them as standard **base58** strings (using the `bs58` library) rather than base64. This prevents empty status query results and ensures the Yellowstone gRPC stream and RPC polling loops correctly track transaction confirmation status.
+
+### 9.2 Standalone REST API Server (`server.ts`)
+
+A lightweight HTTP server written with Node's native `http` module. It exposes:
+- **`GET /health`**: Returns the health of RPC node and validator stream interfaces.
+- **`POST /submit`**: Accepts JSON payloads:
+  ```json
+  {
+    "transaction": "<base64-serialized-tx>",
+    "urgency": "low" | "medium" | "high"
+  }
+  ```
+  - **`low`** maps to the Jito 25th percentile tip floor.
+  - **`medium`** maps to the Jito 75th percentile tip floor.
+  - **`high`** maps to the Jito 95th percentile tip floor.
+
+---
+
+## 10. Mainnet Validation Test Harnesses (`scripts/harnesses/`)
+
+Sentry includes 6 standalone test scripts in `scripts/harnesses/` to validate all pipeline layers against live Solana mainnet conditions:
+
+| Script | Command | Purpose |
+|---|---|---|
+| `harness_faults.ts` | `npm run harness:faults` | Simulates standard execution (using a 1,000-lamport self-transfer to bypass Solana rent-exemption floors), zero tip failures, blockhash expirations, and simulation errors with AI reasoning console logs. |
+| `harness_trader.ts` | `npm run harness:trader` | Simulates swapping SOL ⇄ USDC via Jupiter API, demonstrating quote expiry, slippage boundary breaches, and Jito leader skips. |
+| `harness_requote.ts` | `npm run harness:requote` | Demonstrates that Sentry does not blindly fail on slippage; instead, it re-quotes fresh swap routes via Jupiter, re-signs, and submits. |
+| `harness_sniper.ts` | `npm run harness:sniper` | Models liquidity pool detection, route lookup, high-congestion tip, and +1 slot bundle sniping. |
+| `harness_budget.ts` | `npm run harness:budget` | Enforces a session budget cap; the AI holds/aborts when upcoming tip requirements exceed remaining pool limits. |
+| `harness_mev.ts` | `npm run harness:mev` | Audits MEV exposure, showing side-by-side transaction cost and searcher frontrun/backrun risk comparison (Public Route vs. Jito Bundle). |
+

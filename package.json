@@ -11,7 +11,14 @@
     "format:check": "prettier --check .",
     "lint": "eslint",
     "start": "next start",
-    "cli": "node cli.js"
+    "cli": "node cli.js",
+    "server": "npx tsx server.ts",
+    "harness:faults": "npx tsx scripts/harnesses/harness_faults.ts",
+    "harness:trader": "npx tsx scripts/harnesses/harness_trader.ts",
+    "harness:requote": "npx tsx scripts/harnesses/harness_requote.ts",
+    "harness:sniper": "npx tsx scripts/harnesses/harness_sniper.ts",
+    "harness:budget": "npx tsx scripts/harnesses/harness_budget.ts",
+    "harness:mev": "npx tsx scripts/harnesses/harness_mev.ts"
   },
   "description": "Next.js, Tailwind, @solana/react-hooks",
   "keywords": [
