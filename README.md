@@ -446,7 +446,7 @@ We created 6 mainnet-active verification test harnesses in `scripts/harnesses/` 
 
 Here is the verified terminal execution of `npm run harness:faults` running on Solana Mainnet:
 
-![Sentry Mainnet Fault Harness Run](file:///C:/Users/SAMUEL/.gemini/antigravity-ide/brain/da7b9f15-e1a4-45c0-bc9c-c15635a5a02e/media__1782760498830.png)
+![Sentry Mainnet Fault Harness Run](screenshots/Harness.png)
 
 Every action, recommended tip, and classification is written asynchronously by the AI agent to the local [agent_decisions.jsonl](file:///Ubuntu/home/samuel/smart-tx-observatory/agent_decisions.jsonl) decision registry.
 
